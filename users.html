@@ -1,5 +1,9 @@
 <!DOCTYPE html>
-<html lang="en"><head><script>try{if(!location.hash) location.replace(location.pathname+'#/users')}catch(e){}</script>
+<html lang="en"><head>
+<script>
+(function(){try{if(!location.hash) history.replaceState({route:'users'},'', location.pathname+'#/users');}catch(e){if(!location.hash) location.hash='#/users';}})();
+</script>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Test Pack Dashboard — CCC | B Item Tracking Preview</title>
@@ -8675,5 +8679,119 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   window.addEventListener('hashchange',function(){setTimeout(function(){ensureUserButton(); if(String(location.hash||'').toLowerCase().indexOf('/users')>=0) window.openUserManagementHard();},80);});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){ensureUserPage();ensureUserButton();}); else {ensureUserPage();ensureUserButton();}
   [100,500,1200,2500,5000,9000].forEach(function(ms){setTimeout(function(){ensureUserPage();ensureUserButton(); if(String(location.hash||'').toLowerCase().indexOf('/users')>=0) window.openUserManagementHard();},ms);});
+})();
+</script>
+
+<!-- FINAL V33: User Management as a real isolated page, no overlay with dashboard content -->
+<style id="final-v33-user-real-page-css">
+body.v33-users-page #userManagementPage.user-mgmt-page.active{
+  display:block!important;
+  position:fixed!important;
+  top:var(--v12-header-h,72px)!important;
+  left:var(--v12-sidebar-w,232px)!important;
+  right:0!important;
+  bottom:0!important;
+  width:auto!important;
+  height:auto!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:18px 20px 22px!important;
+  box-sizing:border-box!important;
+  background:var(--bg)!important;
+  overflow:auto!important;
+  z-index:2600!important;
+}
+body.v33-users-page .tabs-wrap,
+body.v33-users-page #dashContent,
+body.v33-users-page .section-title,
+body.v33-users-page #bItemControlPage,
+body.v33-users-page #bItemMonitoringPage{
+  pointer-events:none!important;
+}
+body.v33-users-page #userManagementPage .user-mgmt-top{
+  position:sticky!important;
+  top:0!important;
+  z-index:5!important;
+  background:var(--bg)!important;
+  padding-bottom:12px!important;
+}
+#v12UserManagementOption.final-v33-user-btn{display:flex!important;visibility:visible!important;opacity:1!important;}
+</style>
+<script id="final-v33-user-real-page-js">
+(function(){
+  if(window.__FINAL_V33_USER_REAL_PAGE__) return;
+  window.__FINAL_V33_USER_REAL_PAGE__=true;
+  function safe(fn){try{return fn&&fn();}catch(e){console.warn('[V33 Users]', e&&e.message?e.message:e);}}
+  function ensureBtn(){
+    var nav=document.getElementById('v12SideNav');
+    var panel=nav&&nav.querySelector('.v12-menu-panel');
+    if(!panel) return null;
+    var btn=panel.querySelector('#v12UserManagementOption');
+    if(!btn){btn=document.createElement('button'); btn.id='v12UserManagementOption'; panel.appendChild(btn);}
+    btn.type='button';
+    btn.textContent='👥 User Management';
+    btn.classList.add('final-v33-user-btn');
+    btn.setAttribute('data-v12-view','users');
+    btn.setAttribute('data-view','users');
+    btn.onclick=function(ev){return window.openUserManagementRealPage(ev);};
+    return btn;
+  }
+  function ensurePage(){
+    if(typeof window.openUserManagementHard==='function'){
+      // Let the previous code create the page once, then we immediately isolate it.
+      var existing=document.getElementById('userManagementPage');
+      if(existing) return existing;
+    }
+    var page=document.getElementById('userManagementPage');
+    if(page) return page;
+    // Fallback minimal page if older code did not create it yet.
+    page=document.createElement('div');
+    page.id='userManagementPage';
+    page.className='user-mgmt-page';
+    page.innerHTML='<div class="user-mgmt-top"><div><div class="user-mgmt-title">User Management</div><div class="user-mgmt-sub">Admin-only page to create users and manage access.</div></div><div class="user-actions"><button class="action-btn" type="button" onclick="showEmployerView(\'dashboard\')">↩ Dashboard</button></div></div><div class="user-card"><div id="umUsersBody">Loading...</div></div>';
+    (document.getElementById('dashboardApp')||document.body).appendChild(page);
+    return page;
+  }
+  function markActive(){
+    document.querySelectorAll('.v12-menu-panel button,#globalMenuPanel button,#adminMenu button').forEach(function(b){b.classList.remove('active');});
+    var b=document.getElementById('v12UserManagementOption');
+    if(b)b.classList.add('active');
+  }
+  window.openUserManagementRealPage=function(ev){
+    if(ev){safe(function(){ev.preventDefault();});safe(function(){ev.stopPropagation();});safe(function(){ev.stopImmediatePropagation();});}
+    // Create full user page using the existing V32/V28 logic without leaving it as an inline overlay.
+    var page=document.getElementById('userManagementPage');
+    if(!page && typeof window.openUserManagementHard==='function'){
+      safe(function(){ window.openUserManagementHard(); });
+      page=document.getElementById('userManagementPage');
+    }
+    page=ensurePage();
+    document.body.classList.add('v33-users-page','v12-app-mode');
+    safe(function(){history.pushState({route:'users',mode:'employer'},'', '#/users');});
+    // Hide B Item real pages; dashboard can remain behind because user page is fixed above it.
+    ['bItemControlPage','bItemMonitoringPage'].forEach(function(id){var el=document.getElementById(id); if(el)el.classList.remove('active');});
+    page.classList.add('active');
+    page.style.display='block';
+    markActive();
+    safe(function(){ if(typeof window.umHardLoadUsers==='function') window.umHardLoadUsers(); });
+    return false;
+  };
+  var oldShow=window.showEmployerView;
+  window.showEmployerView=function(view,opts){
+    if(String(view||'').toLowerCase()==='users') return window.openUserManagementRealPage();
+    document.body.classList.remove('v33-users-page');
+    var p=document.getElementById('userManagementPage'); if(p){p.classList.remove('active'); p.style.display='none';}
+    return oldShow?oldShow.apply(this,arguments):undefined;
+  };
+  document.addEventListener('click',function(ev){
+    var t=ev.target&&ev.target.closest&&ev.target.closest('#v12UserManagementOption,[data-v12-view="users"],[data-view="users"]');
+    if(t) return window.openUserManagementRealPage(ev);
+  },true);
+  window.addEventListener('hashchange',function(){
+    setTimeout(function(){ensureBtn(); if(String(location.hash||'').toLowerCase().indexOf('/users')>=0) window.openUserManagementRealPage();},60);
+  });
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',function(){ensureBtn(); if(String(location.hash||'').toLowerCase().indexOf('/users')>=0) window.openUserManagementRealPage();});
+  else {ensureBtn(); if(String(location.hash||'').toLowerCase().indexOf('/users')>=0) window.openUserManagementRealPage();}
+  [300,900,1800,3500].forEach(function(ms){setTimeout(function(){ensureBtn(); if(String(location.hash||'').toLowerCase().indexOf('/users')>=0) window.openUserManagementRealPage();},ms);});
 })();
 </script>
