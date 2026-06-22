@@ -1,11 +1,14 @@
-# TESTPACK MULTI PAGE V4 - Navigation Fix Preview
+# TESTPACK_MULTI_PAGE_CLEAN_V1
 
-تصحيح مباشر لملاحظات V3:
+نسخة clean multi-page حقيقية بدون نسخ سكربت الـ SPA القديم داخل كل صفحة.
 
-- Home button داخل صفحات Dashboard / B Item / Monitoring.
-- B Item Control: حذف زر Dashboard، وترك زر Reload B Item واحد فقط.
-- B Item Monitoring: تثبيت فتح صفحة المونيتور وعدم الرجوع للPortal.
-- Profile: My Profile و Change Password يفتحوا صفحة Profile مستقلة وليس User Management.
-- الحفاظ على السايدبار والفلاتر داخل صفحات الداشبورد/البي آيتم.
+- index.html: Portal Visitor / CCC Employer
+- login.html: Login
+- projects.html: Home بنظام قوائم شبيه FMS
+- dashboard.html: Dashboard صفحة مستقلة
+- bitem.html: B Item Control صفحة مستقلة تعتمد على D1
+- bitem-monitoring.html: Monitoring مستقل
+- users.html: User Management مستقل
+- profile.html: Profile مستقل
 
-لا يوجد تغيير في Selenium أو Workflow أو D1 Sync logic.
+ارفعها على branch preview فقط، وليس main.
