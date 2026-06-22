@@ -1,17 +1,11 @@
-# TESTPACK MULTI PAGE V3 - Portal Polish Preview
+# TESTPACK MULTI PAGE V4 - Navigation Fix Preview
 
-تعديل واجهة الـ Portal والـ Project Home فقط مع تحسينات تنقل:
+تصحيح مباشر لملاحظات V3:
 
-- رجوع أول صفحة Portal بنفس فكرة Visitor / CCC Employer.
-- صفحة Project Home بخلفية أغمق من الأبيض وشعار CCC في المنتصف.
-- إضافة شعار CCC أعلى الشمال قبل CCC Control Platform.
-- إضافة Profile menu يمين الشريط: My Profile / Change Password / Logout.
-- Dashboard menu → Test Pack Dashboard.
-- Construction menu → B Punch Edit.
-- Monitor menu → B Item Monitoring / User Management.
-- تغيير عنوان B Item Control و B Item Monitor في أعلى الصفحات.
-- استبدال زر Menu الجانبي بزر Home.
-- إزالة زر Dashboard من صفحة B Item Control وتقليل Reload B Item لزر واحد.
-- إصلاح فتح B Item Monitoring كصفحة monitoring بدل الرجوع للـ portal.
+- Home button داخل صفحات Dashboard / B Item / Monitoring.
+- B Item Control: حذف زر Dashboard، وترك زر Reload B Item واحد فقط.
+- B Item Monitoring: تثبيت فتح صفحة المونيتور وعدم الرجوع للPortal.
+- Profile: My Profile و Change Password يفتحوا صفحة Profile مستقلة وليس User Management.
+- الحفاظ على السايدبار والفلاتر داخل صفحات الداشبورد/البي آيتم.
 
-هذه نسخة Preview على branch فقط، وليست بديل نهائي للموقع الأساسي.
+لا يوجد تغيير في Selenium أو Workflow أو D1 Sync logic.

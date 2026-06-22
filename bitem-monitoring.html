@@ -8345,3 +8345,39 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   window.addEventListener('hashchange',()=>setTimeout(()=>{if(bitemActive()){ensureRowsOnce().then(()=>window.renderBItemControl(true));}},300));
 })();
 </script>
+
+<script id="mp-v4-page-polish">
+(function(){
+  function qs(s,r=document){return r.querySelector(s)}
+  function qsa(s,r=document){return Array.from(r.querySelectorAll(s))}
+  function addHome(){
+    var hdr=document.querySelector('.hdr'); if(!hdr||document.getElementById('mpHomeBtn'))return;
+    var btn=document.createElement('button'); btn.id='mpHomeBtn'; btn.className='upload-btn'; btn.type='button'; btn.textContent='🏠 Home'; btn.onclick=function(){location.href='/projects.html'};
+    var live=document.querySelector('.live-status'); hdr.insertBefore(btn, live||hdr.lastChild);
+  }
+  function isBitem(){return /bitem/i.test(document.title)||location.pathname.toLowerCase().includes('bitem');}
+  function cleanBitemTools(){
+    var tools=document.querySelector('#bItemControlPage .bitem-tools'); if(!tools)return;
+    qsa('button',tools).forEach(function(b){var t=(b.textContent||'').trim(); if(/Dashboard/i.test(t)) b.remove();});
+    var reloads=qsa('button',tools).filter(function(b){return /Reload B Item/i.test(b.textContent||'')});
+    reloads.forEach(function(b,i){if(i>0)b.remove();});
+  }
+  function forceBitem(){
+    try{ if(location.pathname.toLowerCase().includes('bitem')&&!location.pathname.toLowerCase().includes('monitor')){ if(!location.hash||!/bitem/i.test(location.hash)) history.replaceState(null,'','/bitem.html#/bitem'); if(typeof enterDashboardMode==='function')enterDashboardMode('employer',{replace:true}); if(typeof showEmployerView==='function')showEmployerView('bitem'); }}catch(e){}
+  }
+  function forceMonitoring(){
+    try{ if(location.pathname.toLowerCase().includes('bitem-monitoring')){ if(!location.hash||!/monitor/i.test(location.hash)) history.replaceState(null,'','/bitem-monitoring.html#/monitoring'); if(typeof enterDashboardMode==='function')enterDashboardMode('employer',{replace:true}); if(typeof showEmployerView==='function')showEmployerView('monitoring'); }}catch(e){}
+  }
+  function showSidebar(){
+    var sidebar=document.querySelector('.sidebar'); if(sidebar){sidebar.style.display='block';sidebar.style.width='210px';sidebar.style.flexShrink='0';}
+    var layout=document.querySelector('.layout'); if(layout)layout.style.display='flex';
+  }
+  function run(){addHome(); forceBitem(); forceMonitoring(); cleanBitemTools(); showSidebar();}
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(run,50);setTimeout(run,800);setTimeout(run,2000);});
+  window.addEventListener('load',function(){setTimeout(run,200);setTimeout(run,1500);});
+  setInterval(run,2500);
+})();
+</script>
+<style id="mp-v4-page-polish-css">
+#mpHomeBtn{margin-left:8px!important;white-space:nowrap}#adminMenuWrap .hamburger-btn,#globalEmployerMenu{display:none!important}.hdr-title{font-weight:900!important}.bitem-control-page h1,.bitem-title{font-weight:900!important}.sidebar{display:block!important}.layout{display:flex!important}
+</style>
