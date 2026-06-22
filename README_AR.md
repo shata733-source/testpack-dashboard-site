@@ -1,10 +1,13 @@
-# TESTPACK_MULTI_PAGE_VISUAL_MIGRATION_V3_EXACT_STABLE_UI
+# TESTPACK MULTI PAGE V4 SHAPE FIX
 
-هذه النسخة ليست تصميم جديد.
-تم استخدام نفس index المستقر القديم للحفاظ على نفس الشكل والمحتوى، مع صفحات فعلية مبدئية:
-- dashboard.html#/dashboard
-- bitem.html#/bitem
-- bitem-monitoring.html#/monitoring
-- users.html#/users
+هذه النسخة مبنية على TESTPACK_MULTI_PAGE_V4_NAVIGATION_FIX_PREVIEW_PACKAGE.zip وتحافظ على نفس الشكل القديم/V4.
 
-ارفعها على branch multipage-preview فقط.
+التعديلات فقط:
+- B Item Monitoring يفتح صفحة المونيتور نفسها ولا يرجع للوجين/الدashboard.
+- B Item Control يفتح صفحة B Item ولا يذهب للDashboard.
+- إضافة زر Home واضح في الهيدر يرجع إلى projects.html.
+- إخفاء زر Menu الداخلي القديم.
+- إزالة زر Dashboard من B Item Control.
+- ترك زر Reload B Item واحد فقط.
+
+ارفعها على branch multipage-preview فقط، وليس main.
