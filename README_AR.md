@@ -1,10 +1,17 @@
-# TESTPACK MULTI PAGE V2 PREVIEW
+# TESTPACK MULTI PAGE V3 - Portal Polish Preview
 
-هذه نسخة Preview لتحسين شكل البوابة وطريقة التنقل فقط.
+تعديل واجهة الـ Portal والـ Project Home فقط مع تحسينات تنقل:
 
-- الصفحة الأولى رجعت Portal: Visitor / CCC Employer.
-- بعد Login يفتح Project Control Home بشكل قريب من FMS.
-- Dashboard / Construction / Monitor قوائم منفصلة.
-- لم يتم تغيير Selenium أو Excel أو D1 Sync.
+- رجوع أول صفحة Portal بنفس فكرة Visitor / CCC Employer.
+- صفحة Project Home بخلفية أغمق من الأبيض وشعار CCC في المنتصف.
+- إضافة شعار CCC أعلى الشمال قبل CCC Control Platform.
+- إضافة Profile menu يمين الشريط: My Profile / Change Password / Logout.
+- Dashboard menu → Test Pack Dashboard.
+- Construction menu → B Punch Edit.
+- Monitor menu → B Item Monitoring / User Management.
+- تغيير عنوان B Item Control و B Item Monitor في أعلى الصفحات.
+- استبدال زر Menu الجانبي بزر Home.
+- إزالة زر Dashboard من صفحة B Item Control وتقليل Reload B Item لزر واحد.
+- إصلاح فتح B Item Monitoring كصفحة monitoring بدل الرجوع للـ portal.
 
-مهم: هذه نسخة Preview وليست Replacement نهائي.
+هذه نسخة Preview على branch فقط، وليست بديل نهائي للموقع الأساسي.

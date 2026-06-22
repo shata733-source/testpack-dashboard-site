@@ -7972,7 +7972,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     let nav=$('v12SideNav');
     if(!nav){
       nav=document.createElement('div'); nav.id='v12SideNav';
-      nav.innerHTML='<div class="v12-menu-label">Navigation</div><button type="button" class="v12-menu-main"><span>☰</span><span>Menu</span></button><div class="v12-menu-panel"><button type="button" data-v12-view="dashboard">📊 Dashboard</button><button type="button" data-v12-view="bitem">🧾 B Item Control</button><button type="button" data-v12-view="monitoring">🕵️ B Item Monitoring</button></div>';
+      nav.innerHTML='<div class="v12-menu-label">Navigation</div><button type="button" class="v12-menu-main" onclick="location.href='/projects.html'"><span>🏠</span><span>Home</span></button><div class="v12-menu-panel"><button type="button" data-v12-view="dashboard">📊 Dashboard</button><button type="button" data-v12-view="bitem">🧾 B Item Control</button><button type="button" data-v12-view="monitoring">🕵️ B Item Monitoring</button></div>';
       side.insertBefore(nav,side.firstChild);
       nav.querySelector('.v12-menu-main').onclick=function(ev){ev.stopPropagation();nav.classList.toggle('open');};
       nav.querySelectorAll('[data-v12-view]').forEach(b=>b.onclick=function(ev){ev.stopPropagation();nav.classList.remove('open');setView(this.dataset.v12View,{push:true});});
