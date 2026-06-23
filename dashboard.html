@@ -1,5 +1,8 @@
 <!DOCTYPE html>
 <html lang="en"><head>
+<script id="mp-v5-boot-hide">document.documentElement.classList.add('mp-v5-booting');</script>
+<style id="mp-v5-boot-hide-css">html.mp-v5-booting body{visibility:hidden!important}</style>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Test Pack Dashboard — CCC | B Item Tracking Preview</title>
@@ -7972,7 +7975,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     let nav=$('v12SideNav');
     if(!nav){
       nav=document.createElement('div'); nav.id='v12SideNav';
-      nav.innerHTML='<div class="v12-menu-label">Navigation</div><button type="button" class="v12-menu-main" onclick="location.href='/projects.html'"><span>🏠</span><span>Home</span></button><div class="v12-menu-panel"><button type="button" data-v12-view="dashboard">📊 Dashboard</button><button type="button" data-v12-view="bitem">🧾 B Item Control</button><button type="button" data-v12-view="monitoring">🕵️ B Item Monitoring</button></div>';
+      nav.innerHTML=`<div class="v12-menu-label">Navigation</div><button type="button" class="v12-menu-main" onclick="location.href='/projects.html'"><span>🏠</span><span>Home</span></button><div class="v12-menu-panel"><button type="button" data-v12-view="dashboard">📊 Dashboard</button><button type="button" data-v12-view="bitem">🧾 B Item Control</button><button type="button" data-v12-view="monitoring">🕵️ B Item Monitoring</button></div>`;
       side.insertBefore(nav,side.firstChild);
       nav.querySelector('.v12-menu-main').onclick=function(ev){ev.stopPropagation();nav.classList.toggle('open');};
       nav.querySelectorAll('[data-v12-view]').forEach(b=>b.onclick=function(ev){ev.stopPropagation();nav.classList.remove('open');setView(this.dataset.v12View,{push:true});});
@@ -8274,6 +8277,59 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   function isoOfRow(r){return C(rowGet(r,['ISO No.','ISO No','ISO','Spool','ISO / Spool']))||'';}
   function sheetOfRow(r){return C(rowGet(r,['Sheet No.','Sheet No','Sheet','Sheet Number']))||'';}
   function applySearch(rows){const q=U(document.getElementById('bItemControlSearch')&&document.getElementById('bItemControlSearch').value); if(!q)return rows; return rows.filter(r=>[displayId(r),actualId(r),tpOfRow(r),stageOfRow(r),areaOfRow(r),matOfRow(r),commentOfRow(r),finalStatus(r),queryStatus(r),isoOfRow(r),sheetOfRow(r)].some(x=>U(x).includes(q)));}
+
+  window.__BITEM_COL_FILTERS=window.__BITEM_COL_FILTERS||{};
+  function bitemColValue(r,i){
+    switch(Number(i)){
+      case 1:return displayId(r);
+      case 2:return tpOfRow(r);
+      case 3:return stageOfRow(r);
+      case 4:return dateOfRow(r);
+      case 5:return areaOfRow(r);
+      case 6:return isoOfRow(r);
+      case 7:return sheetOfRow(r);
+      case 8:return punchCatOfRow(r)||'B';
+      case 9:return matOfRow(r);
+      case 10:return commentOfRow(r);
+      case 11:return queryStatus(r);
+      case 12:return finalStatus(r);
+      case 13:return finalDate(r);
+      case 14:return v24UserCleared(r);
+      case 15:return v24Note(r);
+      case 16:return reinstContractorOfTp(tpOfRow(r));
+      default:return '';
+    }
+  }
+  function applyBItemColumnFilters(rows){
+    const filters=window.__BITEM_COL_FILTERS||{};
+    const active=Object.keys(filters).filter(k=>C(filters[k])!=='');
+    if(!active.length)return rows;
+    return rows.filter(r=>active.every(k=>U(bitemColValue(r,k)).includes(U(filters[k]))));
+  }
+  window.setBItemColumnFilter=function(i,v){
+    window.__BITEM_COL_FILTERS=window.__BITEM_COL_FILTERS||{};
+    window.__BITEM_COL_FILTERS[i]=v||'';
+    const el=document.activeElement;
+    window.__BITEM_COL_FOCUS={i:Number(i),pos:el&&typeof el.selectionStart==='number'?el.selectionStart:String(v||'').length};
+    window.__V21_BITEM_PAGE=1;
+    clearTimeout(window.__bitemColFilterTimer);
+    window.__bitemColFilterTimer=setTimeout(()=>window.renderBItemControl(false),160);
+  };
+  window.bitemClearColumnFilters=function(){
+    window.__BITEM_COL_FILTERS={};
+    window.__V21_BITEM_PAGE=1;
+    window.renderBItemControl(false);
+  };
+  function renderBItemFilterCell(h,i,cls){
+    if(i===0)return `<th class="${cls}"><button type="button" class="bitem-filter-reset" onclick="window.bitemClearColumnFilters()">Clear</button></th>`;
+    const val=(window.__BITEM_COL_FILTERS&&window.__BITEM_COL_FILTERS[i])||'';
+    return `<th class="${cls}"><input class="bitem-col-filter" data-bitem-col-filter="${i}" value="${esc(val)}" placeholder="Filter..." title="Filter ${esc(h)}" oninput="window.setBItemColumnFilter(${i},this.value)" onclick="event.stopPropagation()"></th>`;
+  }
+  function restoreBItemFilterFocus(){
+    const f=window.__BITEM_COL_FOCUS; if(!f)return;
+    const el=document.querySelector(`[data-bitem-col-filter="${f.i}"]`);
+    if(el){try{el.focus(); const p=Math.min(f.pos||0,el.value.length); el.setSelectionRange(p,p);}catch(e){}}
+  }
   function v24StatusText(v){
     const raw=C(v);
     const u=U(raw);
@@ -8317,8 +8373,10 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     if(!head||!body)return;
     if(resetPage)window.__V21_BITEM_PAGE=1;
     const headers=['ACTION','B ITEM ID','TP NUMBER','STAGE','DATE','AREA','ISO NO.','SHEET NO.','PUNCH CATEGORY','MATERIAL TYPE','COMMENT','FMS / CCC Excel Status','FINAL STATUS','Punch Cleared Date','USER CLEARED','NOTE','SCOPE'];
-    head.innerHTML='<tr>'+headers.map((h,i)=>`<th class="${({0:'bitem-action-col',1:'bitem-id-col',10:'bitem-comment-col',11:'bitem-status-col',12:'bitem-status-col',13:'bitem-cleared-col',14:'bitem-cleared-col',15:'bitem-note-col'}[i]||'')}">${esc(h)}</th>`).join('')+'</tr>';
-    let rows=applySearch(specialBRows().rows.slice());
+    const classOf=(i)=>({0:'bitem-action-col',1:'bitem-id-col',10:'bitem-comment-col',11:'bitem-status-col',12:'bitem-status-col',13:'bitem-cleared-col',14:'bitem-cleared-col',15:'bitem-note-col'}[i]||'');
+    head.innerHTML='<tr>'+headers.map((h,i)=>`<th class="${classOf(i)}">${esc(h)}</th>`).join('')+'</tr>'+
+      '<tr class="bitem-filter-row">'+headers.map((h,i)=>renderBItemFilterCell(h,i,classOf(i))).join('')+'</tr>';
+    let rows=applyBItemColumnFilters(applySearch(specialBRows().rows.slice()));
     rows.sort((a,b)=>tpOfRow(a).localeCompare(tpOfRow(b),undefined,{numeric:true})||displayId(a).localeCompare(displayId(b),undefined,{numeric:true}));
     const sel=document.getElementById('bItemControlPageSize'); const size=Math.max(25,Number(sel&&sel.value)||100); const pages=Math.max(1,Math.ceil(rows.length/size)); if(window.__V21_BITEM_PAGE>pages)window.__V21_BITEM_PAGE=pages; const start=(window.__V21_BITEM_PAGE-1)*size; const page=rows.slice(start,start+size);
     body.innerHTML=page.map(r=>{const id=actualId(r), fp=fingerprint(r), old=finalDate(r), note=v24Note(r); const eid=encodeURIComponent(id), efp=encodeURIComponent(fp), eold=encodeURIComponent(old); const btn=`<button class="bitem-edit-btn" type="button" onclick="window.bitemStartSystemClearedEdit&&window.bitemStartSystemClearedEdit('${eid}','${efp}','${eold}')">✏️ Edit</button>`; return `<tr>
@@ -8326,6 +8384,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     </tr>`;}).join('') || '<tr><td colspan="17" class="stage-note">No B Item rows for current filters.</td></tr>';
     if(info)info.textContent=`Page ${window.__V21_BITEM_PAGE} / ${pages}`;
     if(count)count.textContent=`B Item Rows: ${rows.length.toLocaleString()}`;
+    setTimeout(restoreBItemFilterFocus,0);
   }; try{renderBItemControl=window.renderBItemControl;}catch(e){}
   window.bItemPrevPage=function(){window.__V21_BITEM_PAGE=Math.max(1,(window.__V21_BITEM_PAGE||1)-1); window.renderBItemControl(false);};
   window.bItemNextPage=function(){window.__V21_BITEM_PAGE=(window.__V21_BITEM_PAGE||1)+1; window.renderBItemControl(false);};
