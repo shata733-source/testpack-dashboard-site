@@ -9053,3 +9053,99 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   setTimeout(function(){ window.refreshDashboardBItemKpi(true); }, 1500);
 })();
 </script>
+
+
+<script>
+/* === V35 Stages Control B Item D1 Fix ===
+   Stages Control B Punch cards/charts must use bitem_registry D1, not old TP-level or embedded B_ITEM_ROWS logic.
+*/
+(function(){
+  if (window.__V35_STAGE_CONTROL_BITEM_D1__) return;
+  window.__V35_STAGE_CONTROL_BITEM_D1__ = true;
+
+  var lastKey='', lastData=null, inflight=null;
+  function normCon(c){ c=String(c||'ALL').trim(); if(!c||/^ALL$/i.test(c))return 'ALL'; if(/JGC/i.test(c))return 'JGC Direct MP'; if(/CCC/i.test(c))return 'CCC'; return c; }
+  function list(v){
+    if(Array.isArray(v))return v.filter(Boolean).filter(function(x){return String(x).toUpperCase()!=='ALL';});
+    if(!v||String(v).toUpperCase()==='ALL')return [];
+    return [v];
+  }
+  function tokenHeaders(){
+    var h={'Accept':'application/json'};
+    try{
+      var t=localStorage.getItem('ccc_bitem_auth_token')||localStorage.getItem('ccc_auth_token')||localStorage.getItem('cccToken')||'';
+      if(t)h.Authorization='Bearer '+t;
+    }catch(e){}
+    return h;
+  }
+  function params(){
+    var p=new URLSearchParams();
+    try{p.set('contractor',normCon((window.F&&window.F.con)||(typeof F!=='undefined'&&F.con)||'ALL'));}catch(e){p.set('contractor','ALL');}
+    try{var a=list((window.F&&window.F.area)||(typeof F!=='undefined'&&F.area)); if(a.length)p.set('area',a.join(','));}catch(e){}
+    try{var st=list((window.F&&window.F.stage)||(typeof F!=='undefined'&&F.stage)); if(st.length)p.set('stage',st.join(','));}catch(e){}
+    return p;
+  }
+  function fmt(v){return Number(v||0).toLocaleString();}
+  function pct(obj){var t=Number(obj&&obj.total||0), c=Number(obj&&obj.cleared||0); return t>0?Math.round(c/t*100):0;}
+  function controlBox(title,obj,color){
+    obj=obj||{total:0,cleared:0,balance:0};
+    var t=Number(obj.total||0), c=Number(obj.cleared||0), b=Number(obj.balance); if(!Number.isFinite(b))b=Math.max(t-c,0);
+    var pc=t>0?Math.round(c/t*100):0;
+    return '<div class="punch-box" data-v35-stage-bitem="1">'+
+      '<div class="punch-cat">'+title+'</div>'+
+      '<div class="punch-total" style="color:'+color+'">'+fmt(t)+'</div>'+
+      '<div class="punch-sub">Cleared: '+fmt(c)+'</div>'+
+      '<div class="punch-sub" style="color:var(--red)">Balance: '+fmt(b)+'</div>'+
+      '<div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:'+color+'"></div></div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div>'+
+    '</div>';
+  }
+  function mini(items,color){
+    items=Array.isArray(items)?items:[];
+    var mx=Math.max.apply(null, items.map(function(x){return Number(x[1]||0);}).concat([1]));
+    return items.map(function(x){var label=x[0], val=Number(x[1]||0), w=Math.max(2,val/mx*100); return '<div class="hbar-row">'+
+      '<div class="hbar-lbl">'+escapeHtml(label)+'</div>'+
+      '<div class="hbar-wrap"><div class="hbar-fill" style="width:'+w+'%;background:'+color+'"><span class="hbar-cnt '+(val/mx<.18?'outside':'')+'">'+fmt(val)+'</span></div></div>'+
+    '</div>';}).join('');
+  }
+  function escapeHtml(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+  function apply(data){
+    if(!data||!data.ok)return;
+    lastData=data;
+    var boxes=document.getElementById('bPunchControlBoxes');
+    if(boxes)boxes.innerHTML=controlBox('CNS B Punch',data.cns,'var(--orange)')+controlBox('QC Return B Punch',data.ret,'var(--accent2)');
+    var p=document.getElementById('bPunchTypeChart');
+    if(p)p.innerHTML=mini(data.party_counts,'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))');
+    var m=document.getElementById('bPunchMatChart');
+    if(m)m.innerHTML=mini(data.material_counts,'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))');
+  }
+  window.refreshStageControlBItemD1=function(force){
+    var p=params(), key=p.toString(), now=Date.now();
+    if(!force && key===lastKey && lastData){apply(lastData); return Promise.resolve(lastData);}
+    lastKey=key;
+    if(inflight)return inflight;
+    inflight=fetch('/api/bitem/stage-control?'+key+'&_='+now,{headers:tokenHeaders(),cache:'no-store'})
+      .then(function(r){return r.text().then(function(t){var j; try{j=JSON.parse(t);}catch(e){throw new Error('non-JSON '+t.slice(0,100));} if(!r.ok||!j.ok)throw new Error(j.error||('HTTP '+r.status)); apply(j); try{console.info('V35 Stage Control B Item D1 applied',key,j);}catch(_e){} return j;});})
+      .catch(function(e){console.warn('V35 Stage Control B Item D1 failed:',e&&e.message||e); if(lastData)apply(lastData);})
+      .finally(function(){inflight=null;});
+    return inflight;
+  };
+
+  if(typeof renderStagesControl==='function' && !renderStagesControl.__v35D1){
+    var oldRender=renderStagesControl;
+    renderStagesControl=function(data){
+      var out=oldRender.apply(this,arguments);
+      try{window.refreshStageControlBItemD1(true);}catch(e){}
+      return out;
+    };
+    renderStagesControl.__v35D1=true;
+    try{window.renderStagesControl=renderStagesControl;}catch(e){}
+  }
+  if(typeof setF==='function' && !setF.__v35StageD1){
+    var oldSetF=setF;
+    setF=window.setF=function(){var out=oldSetF.apply(this,arguments); setTimeout(function(){try{window.refreshStageControlBItemD1(true);}catch(e){}},150); return out;};
+    setF.__v35StageD1=true;
+  }
+  setTimeout(function(){try{window.refreshStageControlBItemD1(true);}catch(e){}},700);
+})();
+</script>
