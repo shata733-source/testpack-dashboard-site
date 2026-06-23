@@ -8404,39 +8404,32 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 
 
 
-<!-- === V8 PERMISSION GUARD: B Punch Edit page + edit permission === -->
-<style id="v8-permission-guard-css">body.ccc-viewer-mode .bitem-edit-btn{opacity:.45!important;pointer-events:none!important;filter:grayscale(1)}body.ccc-viewer-mode .bitem-cleared-cell{cursor:not-allowed!important}.ccc-auth-block{min-height:100vh;background:#06101c;color:#f4f7fb;font-family:Inter,Arial,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}.ccc-auth-card{max-width:520px;background:#0e1b2c;border:1px solid #203a5b;border-radius:18px;padding:28px;text-align:center}.ccc-auth-card a{display:inline-block;margin-top:12px;border:1px solid #00d4ff;color:#00d4ff;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:800}</style>
-<script id="v8-permission-guard-bitem">
+<!-- === V13 ROLE GUARD: B Punch Edit with page access matrix + safe local fallback === -->
+<style id="v13-role-guard-css">body.ccc-viewer-mode .bitem-edit-btn{opacity:.45!important;pointer-events:none!important;filter:grayscale(1)}body.ccc-viewer-mode .bitem-cleared-cell{cursor:not-allowed!important}.ccc-auth-block{min-height:100vh;background:#06101c;color:#f4f7fb;font-family:Inter,Arial,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}.ccc-auth-card{max-width:520px;background:#0e1b2c;border:1px solid #203a5b;border-radius:18px;padding:28px;text-align:center}.ccc-auth-card a{display:inline-block;margin-top:12px;border:1px solid #00d4ff;color:#00d4ff;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:800}</style>
+<script id="v13-role-guard-bitem">
 (function(){
-  if(window.__V8_PERMISSION_GUARD_BITEM__)return; window.__V8_PERMISSION_GUARD_BITEM__=true;
-  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||'';}catch(e){return '';}}
+  if(window.__V13_ROLE_GUARD_BITEM__)return; window.__V13_ROLE_GUARD_BITEM__=true;
+  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
+  function localUser(){try{return JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'null');}catch(e){return null;}}
   function login(){location.href='/login.html?next='+encodeURIComponent(location.pathname+location.search+location.hash);}
-  function list(v){if(Array.isArray(v))return v;try{var j=JSON.parse(String(v||''));if(Array.isArray(j))return j;}catch(e){}return String(v||'').split(',').map(function(x){return x.trim();}).filter(Boolean);}
-  function canView(u){if(String(u.role||'').toLowerCase()==='admin')return true;return list(u.view_pages||(u.permissions&&u.permissions.view)).indexOf('bitem')>=0;}
-  function canEdit(u){if(String(u.role||'').toLowerCase()==='admin')return true;if(String(u.role||'').toLowerCase()==='viewer')return false;return list(u.edit_pages||(u.permissions&&u.permissions.edit)).indexOf('bitem')>=0;}
+  function arr(v){if(Array.isArray(v))return v; if(v==null)return[]; try{var j=JSON.parse(String(v)); if(Array.isArray(j))return j;}catch(e){} return String(v).split(',').map(function(x){return x.trim();}).filter(Boolean);}
+  function perms(u){if(!u)return{view:[],edit:[]}; if(String(u.role||'').toLowerCase()==='admin')return{view:['dashboard','bitem','bitem-monitoring','users'],edit:['bitem','users']}; return {view:arr(u.view_pages||(u.permissions&&u.permissions.view)),edit:arr(u.edit_pages||(u.permissions&&u.permissions.edit))};}
+  function canView(u){var p=perms(u); return p.view.indexOf('bitem')>=0 || String((u||{}).role||'').toLowerCase()==='admin';}
+  function canEdit(u){var p=perms(u); return p.edit.indexOf('bitem')>=0 || String((u||{}).role||'').toLowerCase()==='admin';}
   function block(msg){document.body.innerHTML='<div class="ccc-auth-block"><div class="ccc-auth-card"><h2>Unauthorized</h2><p>'+msg+'</p><a href="/projects.html">🏠 Home</a></div></div>';}
   function lockViewer(){
     document.body.classList.add('ccc-viewer-mode'); window.__CCC_VIEW_ONLY__=true;
-    function noEdit(){alert('This account has view access only. Editing is not enabled for B Punch Edit.');}
-    function wrap(){
-      ['bitemStartSystemClearedEdit','bitemStartRawClearedEdit','bitemPreviewEdit','bitemEdit'].forEach(function(n){
-        if(typeof window[n]==='function' && !window[n].__viewerLocked){var f=function(){noEdit();}; f.__viewerLocked=true; window[n]=f;}
-      });
-      document.querySelectorAll('.bitem-edit-btn').forEach(function(b){b.title='View only'; b.disabled=true;});
-    }
+    function noEdit(){alert('View only account. Editing is disabled for this user.');}
+    function wrap(){['bitemStartSystemClearedEdit','bitemStartRawClearedEdit','bitemPreviewEdit','bitemEdit'].forEach(function(n){if(typeof window[n]==='function'&&!window[n].__viewerLocked){var f=function(){noEdit();};f.__viewerLocked=true;window[n]=f;}});document.querySelectorAll('.bitem-edit-btn').forEach(function(b){b.title='View only';b.disabled=true;});}
     document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('.bitem-cleared-cell')){e.preventDefault();e.stopPropagation();noEdit();}},true);
     setInterval(wrap,700); setTimeout(wrap,200); setTimeout(wrap,1500);
   }
-  async function guard(){
-    var t=token(); if(!t){login();return;}
-    try{
-      var res=await fetch('/api/auth/me',{cache:'no-store',headers:{authorization:'Bearer '+t}}); var d=await res.json().catch(function(){return {};});
-      if(!res.ok||!d.ok||!d.user){login();return;}
-      try{localStorage.setItem('ccc_bitem_auth_user',JSON.stringify(d.user));}catch(e){}
-      if(!canView(d.user)){block('B Punch Edit is not enabled for your account.');return;}
-      if(!canEdit(d.user))lockViewer();
-    }catch(e){login();}
+  async function readUser(){
+    var t=token(); if(!t)return null;
+    try{var res=await fetch('/api/auth/me',{cache:'no-store',headers:{authorization:'Bearer '+t}}); var d=await res.json().catch(function(){return null;}); if(res.status===401||res.status===403)return 'LOGIN'; if(d&&d.ok&&d.user){try{localStorage.setItem('ccc_bitem_auth_user',JSON.stringify(d.user));sessionStorage.setItem('ccc_bitem_auth_user_session',JSON.stringify(d.user));}catch(e){} return d.user;}}catch(e){}
+    return localUser();
   }
+  async function guard(){var u=await readUser(); if(u==='LOGIN'||!u){login();return;} if(!canView(u)){block('B Punch Edit is not enabled for your account.');return;} if(!canEdit(u))lockViewer();}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',guard); else guard();
 })();
 </script>
@@ -8536,5 +8529,81 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(hardRoute,50); setTimeout(hardRoute,500); setTimeout(hardRoute,1500); setTimeout(hardRoute,3500); });
   window.addEventListener('load',function(){ setTimeout(hardRoute,100); setTimeout(hardRoute,1200); });
   setInterval(hardRoute,2500);
+})();
+</script>
+
+
+<!-- === V13 BITEM INLINE EDIT SINGLE-ROW FIX === -->
+<script id="v13-bitem-single-row-edit-fix">
+(function(){
+  if(window.__V13_BITEM_SINGLE_ROW_EDIT_FIX__) return;
+  window.__V13_BITEM_SINGLE_ROW_EDIT_FIX__ = true;
+  function enc(v){return encodeURIComponent(String(v==null?'':v));}
+  function dec(v){try{return decodeURIComponent(String(v==null?'':v));}catch(e){return String(v==null?'':v);}}
+  function esc(v){return String(v==null?'':v).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]});}
+  function cssEscape(v){if(window.CSS&&CSS.escape)return CSS.escape(String(v)); return String(v).replace(/[^a-zA-Z0-9_-]/g,function(ch){return '\\'+ch;});}
+  function c(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
+  function toIsoDate(v){
+    v=c(v); if(!v)return '';
+    var m=v.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if(m)return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+    m=v.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/); if(m)return m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+    var d=new Date(v); if(!isNaN(d))return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    return '';
+  }
+  function isoToDisplay(v){var iso=toIsoDate(v); if(!iso)return c(v); var a=iso.split('-'); return a[2]+'/'+a[1]+'/'+a[0];}
+  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
+  async function postEdit(id,fp,iso){
+    var headers={'content-type':'application/json'}; var t=token(); if(t)headers.authorization='Bearer '+t;
+    var res=await fetch('/api/bitem/edit',{method:'POST',headers:headers,cache:'no-store',body:JSON.stringify({bitem_id:id,fingerprint:fp,punch_cleared:iso,remarks:'Inline Punch Cleared update'})});
+    var text=await res.text(); var data={}; try{data=text?JSON.parse(text):{};}catch(e){throw new Error('Bad JSON response from /api/bitem/edit: '+text.slice(0,120));}
+    if(!res.ok||data.ok===false)throw new Error(data.error||('HTTP '+res.status));
+    return data;
+  }
+  function closeAllEditors(){
+    document.querySelectorAll('.bitem-cell-editing').forEach(function(td){
+      var old=td.getAttribute('data-v13-old-html');
+      var oldClick=td.getAttribute('data-v13-old-onclick');
+      if(old!=null)td.innerHTML=old;
+      td.classList.remove('bitem-cell-editing');
+      if(oldClick!=null)td.setAttribute('onclick',oldClick);
+      td.removeAttribute('data-v13-old-html'); td.removeAttribute('data-v13-old-onclick');
+    });
+  }
+  function findCell(id,fp){
+    var cells=Array.from(document.querySelectorAll('[data-bitem-system-cleared="'+cssEscape(id)+'"]'));
+    if(cells.length<=1)return cells[0]||null;
+    var efp=enc(fp);
+    return cells.find(function(td){
+      var btn=td.parentElement && td.parentElement.querySelector && td.parentElement.querySelector('.bitem-edit-btn');
+      var on=(btn && btn.getAttribute('onclick'))||'';
+      return on.indexOf(efp)>=0 || on.indexOf(fp)>=0;
+    }) || cells[0] || null;
+  }
+  window.bitemStartSystemClearedEdit=function(eid,efp,eold){
+    if(window.__CCC_VIEW_ONLY__){alert('View only account. Editing is disabled for this user.');return;}
+    var id=dec(eid), fp=dec(efp), oldVal=dec(eold||'');
+    closeAllEditors();
+    var cell=findCell(id,fp);
+    if(!cell){alert('Unable to locate selected row. Please reload B Item and try again.');return;}
+    var oldHtml=cell.innerHTML; var oldClick=cell.getAttribute('onclick')||''; var iso=toIsoDate(oldVal || cell.textContent);
+    cell.setAttribute('data-v13-old-html',oldHtml); cell.setAttribute('data-v13-old-onclick',oldClick); cell.removeAttribute('onclick');
+    cell.classList.add('bitem-cell-editing');
+    cell.innerHTML='<div class="bitem-inline-edit"><input class="bitem-inline-input" type="date" value="'+esc(iso)+'"><button class="bitem-save-btn" type="button" title="Save">✓</button><button class="bitem-cancel-btn" type="button" title="Cancel">×</button></div>';
+    var box=cell.querySelector('.bitem-inline-edit');
+    if(box)box.addEventListener('click',function(e){e.stopPropagation();});
+    var inp=cell.querySelector('input'); var save=cell.querySelector('.bitem-save-btn'); var cancel=cell.querySelector('.bitem-cancel-btn');
+    if(inp){inp.addEventListener('click',function(e){e.stopPropagation();}); setTimeout(function(){inp.focus();},0);}
+    if(cancel)cancel.onclick=function(e){e.preventDefault();e.stopPropagation(); cell.innerHTML=oldHtml; cell.classList.remove('bitem-cell-editing'); if(oldClick)cell.setAttribute('onclick',oldClick);};
+    if(save)save.onclick=async function(e){
+      e.preventDefault(); e.stopPropagation();
+      try{
+        save.disabled=true; save.textContent='...';
+        await postEdit(id,fp,(inp&&inp.value)||'');
+        if(typeof window.bitemLoadSystemState==='function')await window.bitemLoadSystemState(true).catch(function(){});
+        if(typeof window.renderBItemControl==='function')await window.renderBItemControl(false);
+      }catch(err){alert('Save failed: '+(err&&err.message?err.message:err)); save.disabled=false; save.textContent='✓';}
+    };
+  };
+  window.bitemEdit=function(id,fp){window.bitemStartSystemClearedEdit(enc(id),enc(fp),'');};
 })();
 </script>

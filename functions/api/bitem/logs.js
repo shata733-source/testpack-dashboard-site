@@ -1,7 +1,7 @@
 import { json, requirePagePermission } from '../../_shared/auth.js';
 import { assertDB, clean } from '../../_shared/bitem.js';
 
-export async function onRequestGet(context) {
+async function handleGet(context) {
   const dbError = assertDB(context.env); if (dbError) return dbError;
   const auth = await requirePagePermission(context, 'bitem-monitoring', 'view');
   if (auth.error) return auth.error;
@@ -24,4 +24,13 @@ export async function onRequestGet(context) {
     LIMIT ? OFFSET ?
   `).bind(...binds, limit, offset).all();
   return json({ ok: true, rows: rows.results || [], limit, offset });
+}
+
+
+export async function onRequestGet(context) {
+  try { return await handleGet(context); }
+  catch (e) {
+    console.error('functions/api/bitem/logs.js_ERROR', e && (e.stack || e.message || e));
+    return json({ ok:false, error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
+  }
 }

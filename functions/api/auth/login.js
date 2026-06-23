@@ -1,7 +1,8 @@
 import { json, createToken, getClientIP, ensureAuthTables, verifyPasswordRecord, makePasswordHash, audit, normalizePagePermissions, userForClient, ensureBuiltInAdmin } from '../../_shared/auth.js';
-import { clean } from '../../_shared/bitem.js';
 
-export async function onRequestPost(context) {
+function clean(v) { return v === null || v === undefined ? '' : String(v).replace(/\s+/g, ' ').trim(); }
+
+async function handlePost(context) {
   const { request, env } = context;
   let body = {};
   try { body = await request.json(); } catch (_) {}
@@ -56,4 +57,14 @@ export async function onRequestPost(context) {
   const token = await createToken(env, user);
   if (env.DB) await audit(env, 'LOGIN', user, { userAgent: request.headers.get('user-agent') || '' }, { ip });
   return json({ ok: true, token, user });
+}
+
+
+export async function onRequestPost(context) {
+  try {
+    return await handlePost(context);
+  } catch (e) {
+    console.error('AUTH_LOGIN_ERROR', e && (e.stack || e.message || e));
+    return json({ ok:false, error:'Login API error: '+(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
+  }
 }

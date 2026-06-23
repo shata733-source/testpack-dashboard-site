@@ -1,7 +1,7 @@
 import { json, requirePagePermission, getClientIP } from '../../_shared/auth.js';
 import { assertDB, clean, normalizeDate } from '../../_shared/bitem.js';
 
-export async function onRequestPost(context) {
+async function handlePost(context) {
   const dbError = assertDB(context.env); if (dbError) return dbError;
   const auth = await requirePagePermission(context, 'bitem', 'edit');
   if (auth.error) return auth.error;
@@ -15,9 +15,11 @@ export async function onRequestPost(context) {
   const remarks = clean(body.remarks || '');
 
   if (!bitemId && !fingerprint) return json({ ok: false, error: 'bitem_id or fingerprint is required' }, 400);
-  const row = bitemId
-    ? await context.env.DB.prepare('SELECT * FROM bitem_registry WHERE bitem_id=?').bind(bitemId).first()
-    : await context.env.DB.prepare('SELECT * FROM bitem_registry WHERE fingerprint=?').bind(fingerprint).first();
+  // Fingerprint is the real unique key. Some B Item IDs can repeat across sheet/area/comment variants.
+  // Always prefer fingerprint when it is supplied so only the selected row is edited.
+  const row = fingerprint
+    ? await context.env.DB.prepare('SELECT * FROM bitem_registry WHERE fingerprint=?').bind(fingerprint).first()
+    : await context.env.DB.prepare('SELECT * FROM bitem_registry WHERE bitem_id=?').bind(bitemId).first();
   if (!row) return json({ ok: false, error: 'B Item not found' }, 404);
 
   const old = {
@@ -47,4 +49,13 @@ export async function onRequestPost(context) {
     .bind('USER_EDIT', row.bitem_id, row.fingerprint, user.sub, user.name, user.role, getClientIP(context.request), JSON.stringify({ old, new: { user_cleared_date: punchCleared, final_status: finalStatus, final_cleared_date: finalDate }, remarks })).run();
 
   return json({ ok: true, row: updated });
+}
+
+
+export async function onRequestPost(context) {
+  try { return await handlePost(context); }
+  catch (e) {
+    console.error('BITEM_EDIT_ERROR', e && (e.stack || e.message || e));
+    return json({ ok:false, error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
+  }
 }

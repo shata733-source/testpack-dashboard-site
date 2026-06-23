@@ -3,7 +3,7 @@ import { json, requirePagePermission, ensureAuthTables, audit, getClientIP, user
 function clean(v) { return v === null || v === undefined ? '' : String(v).replace(/\s+/g, ' ').trim(); }
 function assertDB(env) { return env && env.DB ? null : json({ ok:false, error:'D1 binding DB is not configured.' }, 500); }
 
-export async function onRequestGet(context) {
+async function handleGet(context) {
   const dbError = assertDB(context.env); if (dbError) return dbError;
   const auth = await requirePagePermission(context, 'users', 'view'); if (auth.error) return auth.error;
   await ensureAuthTables(context.env);
@@ -24,4 +24,13 @@ export async function onRequestGet(context) {
     return { ...u, ...c, active: Number(u.is_active) === 1 };
   });
   return json({ ok: true, users, rows: users });
+}
+
+
+export async function onRequestGet(context) {
+  try { return await handleGet(context); }
+  catch (e) {
+    console.error('functions/api/users/list.js_ERROR', e && (e.stack || e.message || e));
+    return json({ ok:false, error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
+  }
 }

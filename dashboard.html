@@ -8404,21 +8404,27 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 
 
 
-<!-- === V8 VISITOR / PERMISSION GUARD: Dashboard view permission === -->
-<style id="v8-permission-guard-css">.ccc-auth-block{min-height:100vh;background:#06101c;color:#f4f7fb;font-family:Inter,Arial,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}.ccc-auth-card{max-width:520px;background:#0e1b2c;border:1px solid #203a5b;border-radius:18px;padding:28px;text-align:center}.ccc-auth-card a{display:inline-block;margin-top:12px;border:1px solid #00d4ff;color:#00d4ff;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:800}</style>
-<script id="v8-permission-guard-dashboard">
+<!-- === V13 ROLE GUARD: Dashboard viewer/admin/visitor with safe local fallback === -->
+<script id="v13-role-guard-dashboard">
 (function(){
-  if(window.__V8_PERMISSION_GUARD_DASH__)return; window.__V8_PERMISSION_GUARD_DASH__=true;
-  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||'';}catch(e){return '';}}
+  if(window.__V13_ROLE_GUARD_DASH__)return; window.__V13_ROLE_GUARD_DASH__=true;
+  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
+  function localUser(){try{return JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'null');}catch(e){return null;}}
   function isVisitor(){try{return new URLSearchParams(location.search).get('visitor')==='1'||sessionStorage.getItem('cccVisitorMode')==='1';}catch(e){return false;}}
-  function list(v){if(Array.isArray(v))return v;try{var j=JSON.parse(String(v||''));if(Array.isArray(j))return j;}catch(e){}return String(v||'').split(',').map(function(x){return x.trim();}).filter(Boolean);}
-  function canView(u){if(String(u.role||'').toLowerCase()==='admin')return true;return list(u.view_pages||(u.permissions&&u.permissions.view)).indexOf('dashboard')>=0;}
-  function block(){document.body.innerHTML='<div class="ccc-auth-block"><div class="ccc-auth-card"><h2>Unauthorized</h2><p>Test Pack Dashboard is not enabled for your account.</p><a href="/projects.html">🏠 Home</a></div></div>';}
+  function login(){location.href='/login.html?next='+encodeURIComponent(location.pathname+location.search+location.hash);}
+  function arr(v){if(Array.isArray(v))return v; if(v==null)return[]; try{var j=JSON.parse(String(v)); if(Array.isArray(j))return j;}catch(e){} return String(v).split(',').map(function(x){return x.trim();}).filter(Boolean);}
+  function canViewDashboard(u){if(!u)return false; if(String(u.role||'').toLowerCase()==='admin')return true; var p=u.view_pages || (u.permissions&&u.permissions.view); if(p==null)return true; return arr(p).indexOf('dashboard')>=0;}
+  function block(){document.body.innerHTML='<div style="min-height:100vh;background:#06101c;color:#f4f7fb;font-family:Inter,Arial,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px"><div style="max-width:520px;background:#0e1b2c;border:1px solid #203a5b;border-radius:18px;padding:28px;text-align:center"><h2>Unauthorized</h2><p style="color:#9fb3ca">Test Pack Dashboard is not enabled for your account.</p><a href="/projects.html" style="display:inline-block;margin-top:12px;border:1px solid #00d4ff;color:#00d4ff;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:800">🏠 Home</a></div></div>';}
   async function guard(){
     if(isVisitor()){try{sessionStorage.setItem('cccVisitorMode','1');}catch(e){} return;}
-    var t=token(); if(!t){location.href='/login.html?next='+encodeURIComponent(location.pathname+location.search+location.hash);return;}
-    try{var res=await fetch('/api/auth/me',{cache:'no-store',headers:{authorization:'Bearer '+t}}); var d=await res.json().catch(function(){return {};}); if(!res.ok||!d.ok||!d.user){location.href='/login.html?next='+encodeURIComponent(location.pathname+location.search+location.hash);return;} try{localStorage.setItem('ccc_bitem_auth_user',JSON.stringify(d.user));}catch(e){} if(!canView(d.user))block();}
-    catch(e){location.href='/login.html?next='+encodeURIComponent(location.pathname+location.search+location.hash);}
+    var t=token(); if(!t){login();return;}
+    try{
+      var res=await fetch('/api/auth/me',{cache:'no-store',headers:{authorization:'Bearer '+t}});
+      var d=await res.json().catch(function(){return null;});
+      if(res.status===401||res.status===403){login();return;}
+      if(d&&d.ok&&d.user){try{localStorage.setItem('ccc_bitem_auth_user',JSON.stringify(d.user));sessionStorage.setItem('ccc_bitem_auth_user_session',JSON.stringify(d.user));}catch(e){} if(!canViewDashboard(d.user))block(); return;}
+    }catch(e){}
+    var u=localUser(); if(u&&canViewDashboard(u))return; if(u)block(); else login();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',guard); else guard();
 })();

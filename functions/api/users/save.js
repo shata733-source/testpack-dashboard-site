@@ -5,7 +5,7 @@ function assertDB(env) { return env && env.DB ? null : json({ ok:false, error:'D
 
 function validRole(r) { r = clean(r).toLowerCase(); return ['admin','user','viewer'].includes(r) ? r : 'user'; }
 
-export async function onRequestPost(context) {
+async function handlePost(context) {
   const dbError = assertDB(context.env); if (dbError) return dbError;
   const auth = await requirePagePermission(context, 'users', 'edit'); if (auth.error) return auth.error;
   await ensureAuthTables(context.env);
@@ -19,7 +19,7 @@ export async function onRequestPost(context) {
   const perms = normalizePagePermissions(role, body.view_pages ?? body.viewPages, body.edit_pages ?? body.editPages);
 
   if (!username) return json({ ok:false, error:'Username is required' }, 400);
-  if (!/^[a-z0-9._-]{3,50}$/.test(username)) return json({ ok:false, error:'Username must be 3-50 chars: letters, numbers, dot, dash, underscore only' }, 400);
+  if (!/^[a-z0-9._@-]{3,80}$/.test(username)) return json({ ok:false, error:'Username must be 3-80 chars and may contain letters, numbers, dot, dash, underscore, or @' }, 400);
   const existing = await context.env.DB.prepare('SELECT username FROM users WHERE username=?').bind(username).first();
   if (!existing && !password) return json({ ok:false, error:'Password is required for new user' }, 400);
   if (password && password.length < 4) return json({ ok:false, error:'Password must be at least 4 characters' }, 400);
@@ -45,4 +45,13 @@ export async function onRequestPost(context) {
     await audit(context.env, 'USER_CREATED', auth.user, { username, displayName, role, isActive, view_pages: perms.view_pages, edit_pages: perms.edit_pages }, { ip: getClientIP(context.request) });
   }
   return json({ ok:true, view_pages: perms.view_pages, edit_pages: perms.edit_pages });
+}
+
+
+export async function onRequestPost(context) {
+  try { return await handlePost(context); }
+  catch (e) {
+    console.error('functions/api/users/save.js_ERROR', e && (e.stack || e.message || e));
+    return json({ ok:false, error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
+  }
 }
