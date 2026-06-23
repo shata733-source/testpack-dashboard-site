@@ -1,9 +1,9 @@
-import { json, requireUser } from '../../_shared/auth.js';
+import { json, requirePagePermission } from '../../_shared/auth.js';
 import { assertDB, clean } from '../../_shared/bitem.js';
 
 export async function onRequestGet(context) {
   const dbError = assertDB(context.env); if (dbError) return dbError;
-  const auth = await requireUser(context, ['admin']);
+  const auth = await requirePagePermission(context, 'bitem-monitoring', 'view');
   if (auth.error) return auth.error;
   const url = new URL(context.request.url);
   const q = clean(url.searchParams.get('q') || '');

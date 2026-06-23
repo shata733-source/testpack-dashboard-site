@@ -1,9 +1,9 @@
-import { json, requireUser, getClientIP } from '../../_shared/auth.js';
+import { json, requirePagePermission, getClientIP } from '../../_shared/auth.js';
 import { assertDB, clean, normalizeDate } from '../../_shared/bitem.js';
 
 export async function onRequestPost(context) {
   const dbError = assertDB(context.env); if (dbError) return dbError;
-  const auth = await requireUser(context, ['admin', 'user']);
+  const auth = await requirePagePermission(context, 'bitem', 'edit');
   if (auth.error) return auth.error;
   const user = auth.user;
 
