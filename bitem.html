@@ -8677,3 +8677,108 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   setInterval(stripDateCellClickHandlers,2000);
 })();
 </script>
+
+<!-- === V16 USER CLEARED NAME + NO BROWSER SYNC FIX === -->
+<style id="v16-user-cleared-name-css">
+  #bItemControlPage .bitem-user-cleared-name{font-weight:900;color:var(--accent)!important;white-space:normal!important;}
+</style>
+<script id="v16-user-cleared-name-no-browser-sync-js">
+(function(){
+  if(window.__V16_USER_CLEARED_NAME_NO_BROWSER_SYNC_FIX__) return;
+  window.__V16_USER_CLEARED_NAME_NO_BROWSER_SYNC_FIX__ = true;
+
+  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
+  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
+  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
+  async function getState(){
+    var api=window.bitemSystemAPI||(window.bitemSystemAPI={});
+    if(Array.isArray(api.stateRows) && api.stateRows.length) return api.stateRows;
+    try{
+      var h={}; var t=token(); if(t)h.authorization='Bearer '+t;
+      var res=await fetch('/api/bitem/state?include_removed=1&limit=50000&t='+Date.now(),{headers:h,cache:'no-store'});
+      var data=await res.json().catch(function(){return {};});
+      if(res.ok && Array.isArray(data.rows)){api.stateRows=data.rows;api.stateKpi=data.kpi||{};api.total=Number(data.total||data.rows.length||0);return api.stateRows;}
+    }catch(e){}
+    return [];
+  }
+  function fpFromButton(btn){
+    var s=btn && btn.getAttribute('onclick') || '';
+    var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/);
+    return m ? dec(m[2]) : '';
+  }
+  function userNameFromRow(r){
+    var date=clean(r&&r.user_cleared_date);
+    var name=clean(r&&r.last_edited_by) || clean(r&&r.edited_by_name) || clean(r&&r.user_cleared_by);
+    // Show the user only for manual/user edits. FMS or TP-summary closures should not show a user name.
+    if(!date && !(String(r&&r.source_flag||'').toUpperCase().includes('USER'))) return '';
+    return name;
+  }
+  async function applyUserClearedNames(){
+    var rows=await getState();
+    if(!rows.length) return;
+    var byFp=new Map(); rows.forEach(function(r){if(r&&r.fingerprint)byFp.set(String(r.fingerprint),r);});
+    document.querySelectorAll('#bItemControlBody tr').forEach(function(tr){
+      var btn=tr.querySelector('.bitem-edit-btn');
+      var fp=fpFromButton(btn); if(!fp)return;
+      var r=byFp.get(fp); if(!r)return;
+      var tds=tr.children; if(!tds || tds.length<15)return;
+      var td=tds[14]; // USER CLEARED column in current B Item table
+      var name=userNameFromRow(r);
+      td.classList.add('bitem-user-cleared-name');
+      td.innerHTML=esc(name);
+      td.title=name ? ('Cleared by: '+name) : '';
+    });
+  }
+  window.bitemApplyUserClearedNames=applyUserClearedNames;
+
+  function replaceBrowserSyncWithReload(){
+    document.querySelectorAll('button,a').forEach(function(btn){
+      var txt=clean(btn.textContent||'');
+      if(/Sync B Item/i.test(txt)){
+        btn.textContent='↻ Reload B Item';
+        btn.title='B Item sync is handled by the local Selenium/GitHub workflow. This button reloads the current D1 state only.';
+        btn.onclick=function(ev){
+          if(ev)ev.preventDefault();
+          if(window.bitemReloadState) return window.bitemReloadState();
+          if(window.bitemLoadSystemState) return window.bitemLoadSystemState(true).then(function(){ if(window.renderBItemControl) window.renderBItemControl(false); });
+          if(window.renderBItemControl) return window.renderBItemControl(false);
+        };
+      }
+    });
+  }
+  window.bitemRunFullSync=function(){
+    if(window.bitemReloadState) return window.bitemReloadState();
+    if(window.bitemLoadSystemState) return window.bitemLoadSystemState(true).then(function(){ if(window.renderBItemControl) window.renderBItemControl(false); });
+    return Promise.resolve();
+  };
+  window.bitemManualSyncFromUI=window.bitemRunFullSync;
+
+  var realRender=window.renderBItemControl;
+  if(typeof realRender==='function' && !realRender.__v16UserNameWrapped){
+    var wrapped=function(){
+      var out=realRender.apply(this,arguments);
+      setTimeout(function(){replaceBrowserSyncWithReload();applyUserClearedNames();},80);
+      setTimeout(applyUserClearedNames,500);
+      return out;
+    };
+    wrapped.__v16UserNameWrapped=true;
+    window.renderBItemControl=wrapped;
+    try{renderBItemControl=wrapped;}catch(e){}
+  }
+
+  var realStart=window.bitemStartSystemClearedEdit;
+  if(typeof realStart==='function' && !realStart.__v16UserNameWrapped){
+    var startWrapped=function(){
+      window.__V16_EDITING_FP = arguments[1] ? dec(arguments[1]) : '';
+      return realStart.apply(this,arguments);
+    };
+    startWrapped.__v16UserNameWrapped=true;
+    window.bitemStartSystemClearedEdit=startWrapped;
+  }
+
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(function(){replaceBrowserSyncWithReload();applyUserClearedNames();},600);});
+  window.addEventListener('load',function(){setTimeout(function(){replaceBrowserSyncWithReload();applyUserClearedNames();},800);});
+  setInterval(replaceBrowserSyncWithReload,2500);
+})();
+</script>
