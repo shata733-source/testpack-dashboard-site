@@ -31,6 +31,18 @@ async function ensureEditTables(env) {
   for (const sql of regAlters) { try { await env.DB.prepare(sql).run(); } catch (_) {} }
 }
 
+
+const CCC_ALLOWED_SQL = [
+  "UPPER(COALESCE(area,'')) LIKE '%A211%'","UPPER(COALESCE(comment_text,'')) LIKE '%A211%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A211%'","UPPER(COALESCE(tp_no,'')) LIKE '%A211%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A212%'","UPPER(COALESCE(comment_text,'')) LIKE '%A212%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A212%'","UPPER(COALESCE(tp_no,'')) LIKE '%A212%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A222%'","UPPER(COALESCE(comment_text,'')) LIKE '%A222%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A222%'","UPPER(COALESCE(tp_no,'')) LIKE '%A222%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A231%'","UPPER(COALESCE(comment_text,'')) LIKE '%A231%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A231%'","UPPER(COALESCE(tp_no,'')) LIKE '%A231%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A232%'","UPPER(COALESCE(comment_text,'')) LIKE '%A232%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A232%'","UPPER(COALESCE(tp_no,'')) LIKE '%A232%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A233%'","UPPER(COALESCE(comment_text,'')) LIKE '%A233%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A233%'","UPPER(COALESCE(tp_no,'')) LIKE '%A233%'"
+].join(' OR ');
+
+const EFFECTIVE_CONTRACTOR_SQL = `CASE WHEN UPPER(COALESCE(contractor,'')) LIKE '%CCC%' AND (${CCC_ALLOWED_SQL}) THEN 'CCC' ELSE 'JGC Direct MP' END`;
+
 function whereFromUrl(url) {
   const includeRemoved = url.searchParams.get('include_removed') === '1';
   const q = clean(url.searchParams.get('q') || '');
@@ -51,11 +63,9 @@ function whereFromUrl(url) {
   }
   if (contractor && contractor.toUpperCase() !== 'ALL') {
     if (/JGC/i.test(contractor)) {
-      where.push('(contractor=? OR contractor=? OR contractor=?)');
-      binds.push('JGC', 'JGC Direct MP', 'JGC DIRECT MP');
+      where.push(`${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP'`);
     } else {
-      where.push('contractor=?');
-      binds.push(contractor);
+      where.push(`${EFFECTIVE_CONTRACTOR_SQL}='CCC'`);
     }
   }
   if (area && area.toUpperCase() !== 'ALL') { where.push('area=?'); binds.push(area); }
@@ -71,7 +81,7 @@ async function facets(env) {
   const [areas, stages, contractors] = await Promise.all([
     env.DB.prepare(`SELECT DISTINCT area AS v FROM bitem_registry WHERE active=1 AND area IS NOT NULL AND area<>'' ORDER BY area LIMIT 500`).all(),
     env.DB.prepare(`SELECT DISTINCT construction_stage AS v FROM bitem_registry WHERE active=1 AND construction_stage IS NOT NULL AND construction_stage<>'' ORDER BY construction_stage LIMIT 200`).all(),
-    env.DB.prepare(`SELECT DISTINCT contractor AS v FROM bitem_registry WHERE active=1 AND contractor IS NOT NULL AND contractor<>'' ORDER BY contractor LIMIT 20`).all()
+    env.DB.prepare(`SELECT DISTINCT ${EFFECTIVE_CONTRACTOR_SQL} AS v FROM bitem_registry WHERE active=1 ORDER BY v LIMIT 20`).all()
   ]);
   return {
     areas: (areas.results || []).map(x => x.v).filter(Boolean),
@@ -106,7 +116,7 @@ export async function onRequestGet(context) {
 
     const count = await context.env.DB.prepare(`SELECT COUNT(*) AS n FROM bitem_registry ${whereSql}`).bind(...binds).first();
     const rows = await context.env.DB.prepare(`
-      SELECT bitem_id, fingerprint, contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
+      SELECT bitem_id, fingerprint, ${EFFECTIVE_CONTRACTOR_SQL} AS contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
              iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date,
              user_cleared_date, user_cleared_by, last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
       FROM bitem_registry
@@ -120,7 +130,11 @@ export async function onRequestGet(context) {
         SUM(CASE WHEN active=1 THEN 1 ELSE 0 END) AS active_total,
         SUM(CASE WHEN active=1 AND final_status='CLEARED' THEN 1 ELSE 0 END) AS active_cleared,
         SUM(CASE WHEN active=1 AND (final_status IS NULL OR final_status='' OR final_status<>'CLEARED') THEN 1 ELSE 0 END) AS active_balance,
-        SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS removed_total
+        SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS removed_total,
+        SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='CCC' THEN 1 ELSE 0 END) AS ccc_total,
+        SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='CCC' AND final_status='CLEARED' THEN 1 ELSE 0 END) AS ccc_cleared,
+        SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP' THEN 1 ELSE 0 END) AS jgc_total,
+        SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP' AND final_status='CLEARED' THEN 1 ELSE 0 END) AS jgc_cleared
       FROM bitem_registry
     `).first();
 

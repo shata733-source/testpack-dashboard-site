@@ -33,6 +33,17 @@ async function ensureEditTables(env) {
 
 function upper(v) { return clean(v).toUpperCase(); }
 
+const CCC_ALLOWED_SQL = [
+  "UPPER(COALESCE(area,'')) LIKE '%A211%'","UPPER(COALESCE(comment_text,'')) LIKE '%A211%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A211%'","UPPER(COALESCE(tp_no,'')) LIKE '%A211%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A212%'","UPPER(COALESCE(comment_text,'')) LIKE '%A212%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A212%'","UPPER(COALESCE(tp_no,'')) LIKE '%A212%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A222%'","UPPER(COALESCE(comment_text,'')) LIKE '%A222%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A222%'","UPPER(COALESCE(tp_no,'')) LIKE '%A222%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A231%'","UPPER(COALESCE(comment_text,'')) LIKE '%A231%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A231%'","UPPER(COALESCE(tp_no,'')) LIKE '%A231%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A232%'","UPPER(COALESCE(comment_text,'')) LIKE '%A232%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A232%'","UPPER(COALESCE(tp_no,'')) LIKE '%A232%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A233%'","UPPER(COALESCE(comment_text,'')) LIKE '%A233%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A233%'","UPPER(COALESCE(tp_no,'')) LIKE '%A233%'"
+].join(' OR ');
+const EFFECTIVE_CONTRACTOR_SQL = `CASE WHEN UPPER(COALESCE(contractor,'')) LIKE '%CCC%' AND (${CCC_ALLOWED_SQL}) THEN 'CCC' ELSE 'JGC Direct MP' END`;
+
+
 async function findBItem(env, bitemId, fingerprint) {
   if (fingerprint) {
     const r = await env.DB.prepare('SELECT * FROM bitem_registry WHERE fingerprint=? LIMIT 1').bind(fingerprint).first();
@@ -47,13 +58,13 @@ async function findBItem(env, bitemId, fingerprint) {
 
 async function selectUpdated(env, row) {
   if (row.fingerprint) return await env.DB.prepare(`
-    SELECT bitem_id, fingerprint, contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
+    SELECT bitem_id, fingerprint, ${EFFECTIVE_CONTRACTOR_SQL} AS contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
            iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, user_cleared_by,
            last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
     FROM bitem_registry WHERE fingerprint=? LIMIT 1
   `).bind(row.fingerprint).first();
   return await env.DB.prepare(`
-    SELECT bitem_id, fingerprint, contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
+    SELECT bitem_id, fingerprint, ${EFFECTIVE_CONTRACTOR_SQL} AS contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
            iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, user_cleared_by,
            last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
     FROM bitem_registry WHERE bitem_id=? LIMIT 1
@@ -160,6 +171,7 @@ export async function handleSave(context, rawBody = {}) {
     sync_note: syncNote,
     row: updated || {
       ...row,
+      contractor: (clean(row.contractor).toUpperCase().includes('CCC') && ['A211','A212','A222','A231','A232','A233'].some(a => [row.area,row.comment_text,row.iso_or_spool,row.tp_no].map(clean).join(' ').toUpperCase().includes(a))) ? 'CCC' : 'JGC Direct MP',
       user_cleared_date: punchCleared,
       user_cleared_by: editorDisplay,
       final_status: finalStatus,
