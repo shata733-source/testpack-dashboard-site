@@ -6533,7 +6533,7 @@ bootDashboard();
     const d=prompt('Enter Punch Cleared date as YYYY-MM-DD. Leave blank to remove manual cleared date:');
     if(d===null)return;
     const remarks=prompt('Remarks / note for admin monitoring:', '') || '';
-    await api('/api/bitem/edit',{method:'POST',body:JSON.stringify({bitem_id:bitemId,fingerprint,punch_cleared:d,remarks})});
+    await api('/api/bitem/state?op=edit',{method:'POST',body:JSON.stringify({bitem_id:bitemId,fingerprint,punch_cleared:d,remarks})});
     await bitemLoadSystemState(true);
     if(typeof renderBItemControl==='function')renderBItemControl(true);
     alert('Saved. B Item final status and dashboard calculations were refreshed from the system layer.');
@@ -6752,7 +6752,7 @@ bootDashboard();
     const cell=document.querySelector(`[data-bitem-system-cleared="${CSS.escape(id)}"]`);
     makeInlineEditor(cell,toIsoDate(oldVal),async function(iso){
       try{
-        await bitemApi('/api/bitem/edit',{bitem_id:id,fingerprint:fp,punch_cleared:iso,remarks:'Inline Punch Cleared update'});
+        await bitemApi('/api/bitem/state?op=edit',{bitem_id:id,fingerprint:fp,punch_cleared:iso,remarks:'Inline Punch Cleared update'});
         if(typeof window.bitemLoadSystemState==='function')await window.bitemLoadSystemState(true);
         if(typeof renderBItemControl==='function')renderBItemControl(false);
       }catch(e){
@@ -7835,7 +7835,7 @@ bootDashboard();
   window.bitemStartSystemClearedEdit=window.bitemStartSystemClearedEdit||async function(eid,efp,eold){
     const bitem_id=decodeURIComponent(eid), fingerprint=decodeURIComponent(efp), old=decodeURIComponent(eold||'');
     const d=prompt('User Cleared date YYYY-MM-DD. Leave blank to clear:', old||''); if(d===null)return;
-    await apiPost('/api/bitem/edit',{bitem_id,fingerprint,punch_cleared:d,remarks:'Inline User Cleared update'});
+    await apiPost('/api/bitem/state?op=edit',{bitem_id,fingerprint,punch_cleared:d,remarks:'Inline User Cleared update'});
     await window.bitemReloadState();
   };
   window.renderBItemControl=async function(resetPage){
@@ -8348,7 +8348,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     if(u.includes('REMOVED_FROM_EXCEL')||u.includes('REMOVED')) return 'This comment did not return in the latest FMS / CCC Excel source.';
     return n;
   }
-  function v24UserCleared(r){return C(r&&r.__source&&r.__source.user_cleared_date)||C(r&&r.__d1_user_cleared_date)||C(r&&r.user_cleared_date);}
+  function v24UserCleared(r){var src=(r&&r.__source)||{};var hasDate=C(src.user_cleared_date)||C(r&&r.__d1_user_cleared_date)||C(r&&r.user_cleared_date);var name=C(src.last_edited_by)||C(src.edited_by_name)||C(src.user_cleared_by)||C(r&&r.last_edited_by)||C(r&&r.edited_by_name)||C(r&&r.user_cleared_by)||C(r&&r.__d1_last_edited_by);return hasDate?name:'';}
   function v24EnsureBItemTools(){
     try{
       const tools=document.querySelector('#bItemControlPage .bitem-tools'); if(!tools)return;
@@ -8645,7 +8645,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
       var iso=(inp&&inp.value)||'';
       try{
         save.disabled=true; save.textContent='…';
-        await apiPost('/api/bitem/edit',{bitem_id:id,fingerprint:fp,punch_cleared:iso,remarks:'Inline Punch Cleared update'});
+        await apiPost('/api/bitem/state?op=edit',{bitem_id:id,fingerprint:fp,punch_cleared:iso,remarks:'Inline Punch Cleared update'});
         window.__BITEM_INLINE_EDIT_LOCK = false;
         cell.classList.remove('bitem-cell-editing');
         cell.innerHTML=esc(isoToDisplay(iso));
@@ -8786,5 +8786,46 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   document.addEventListener('DOMContentLoaded',function(){setTimeout(function(){replaceBrowserSyncWithReload();applyUserClearedNames();},600);});
   window.addEventListener('load',function(){setTimeout(function(){replaceBrowserSyncWithReload();applyUserClearedNames();},800);});
   setInterval(replaceBrowserSyncWithReload,2500);
+})();
+</script>
+
+
+<!-- === V19 BITEM SAVE VIA STATE API + STABLE USER CLEARED NAME === -->
+<script id="v19-bitem-save-state-stable-user-js">
+(function(){
+  if(window.__V19_BITEM_STATE_SAVE_STABLE_USER__) return;
+  window.__V19_BITEM_STATE_SAVE_STABLE_USER__ = true;
+  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
+  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
+  function fpFromButton(btn){var s=(btn&&btn.getAttribute('onclick'))||'';var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/);return m?dec(m[2]):'';}
+  function userNameFromRow(r){
+    var hasDate=clean(r&&r.user_cleared_date)||clean(r&&r.final_cleared_date);
+    var name=clean(r&&r.last_edited_by)||clean(r&&r.edited_by_name)||clean(r&&r.user_cleared_by);
+    return hasDate?name:'';
+  }
+  function stabilizeUserCleared(){
+    if(window.__BITEM_INLINE_EDIT_LOCK) return;
+    try{
+      var api=window.bitemSystemAPI||{};
+      var rows=Array.isArray(api.stateRows)?api.stateRows:[];
+      if(!rows.length) return;
+      var byFp=new Map(); rows.forEach(function(r){if(r&&r.fingerprint)byFp.set(String(r.fingerprint),r);});
+      document.querySelectorAll('#bItemControlBody tr').forEach(function(tr){
+        var btn=tr.querySelector('.bitem-edit-btn'); var fp=fpFromButton(btn); if(!fp) return;
+        var r=byFp.get(fp); if(!r) return;
+        var cells=tr.children; if(!cells||cells.length<15) return;
+        var td=cells[14]; var nm=userNameFromRow(r);
+        td.classList.add('bitem-user-cleared-name'); td.innerHTML=esc(nm); td.title=nm?('Cleared by: '+nm):'';
+      });
+    }catch(e){}
+  }
+  var oldRender=window.renderBItemControl;
+  if(typeof oldRender==='function' && !oldRender.__v19StableUser){
+    var wrapped=function(){var out=oldRender.apply(this,arguments); setTimeout(stabilizeUserCleared,60); setTimeout(stabilizeUserCleared,250); return out;};
+    wrapped.__v19StableUser=true; window.renderBItemControl=wrapped; try{renderBItemControl=wrapped;}catch(e){}
+  }
+  window.bitemStabilizeUserCleared=stabilizeUserCleared;
+  setInterval(stabilizeUserCleared,3000);
 })();
 </script>
