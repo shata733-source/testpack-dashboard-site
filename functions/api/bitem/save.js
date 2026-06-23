@@ -72,7 +72,9 @@ export async function handleSave(context, rawBody = {}) {
   const bitemId = clean(rawBody.bitem_id || rawBody.id || rawBody.bitemId || '');
   const fingerprint = clean(rawBody.fingerprint || rawBody.fp || '');
   const punchCleared = normalizeDate(rawBody.punch_cleared || rawBody.punchCleared || rawBody.value || rawBody.date || '');
-  const remarks = clean(rawBody.remarks || 'Inline Punch Cleared update');
+  const clearDate = String(rawBody.clear_date || rawBody.clearDate || rawBody.action || '').toLowerCase();
+  const isClearAction = clearDate === '1' || clearDate === 'true' || clearDate === 'clear' || clearDate === 'remove';
+  const remarks = clean(rawBody.remarks || (isClearAction ? 'User removed Punch Cleared date' : 'Inline Punch Cleared update'));
 
   if (!bitemId && !fingerprint) return json({ ok:false, error:'bitem_id or fingerprint is required' }, 400);
 
@@ -91,8 +93,8 @@ export async function handleSave(context, rawBody = {}) {
 
   let finalStatus = 'OPEN';
   let finalDate = '';
-  let sourceFlag = 'SAME_NOT_CLEARED';
-  let syncNote = 'Same not cleared status in both system and latest FMS / CCC Excel source.';
+  let sourceFlag = isClearAction ? 'USER_REOPENED' : 'SAME_NOT_CLEARED';
+  let syncNote = isClearAction ? 'User removed Punch Cleared date; item reopened unless closed by FMS / CCC or TP Summary.' : 'Same not cleared status in both system and latest FMS / CCC Excel source.';
 
   if (punchCleared) {
     finalStatus = 'CLEARED';
@@ -137,7 +139,7 @@ export async function handleSave(context, rawBody = {}) {
   try {
     await context.env.DB.prepare(`INSERT INTO bitem_audit_log(action, bitem_id, fingerprint, username, display_name, role, ip, details, created_at)
       VALUES(?,?,?,?,?,?,?,?,datetime('now'))`)
-      .bind('USER_EDIT', clean(row.bitem_id || bitemId), clean(row.fingerprint || fingerprint), editorUsername, editorDisplay, user.role || '', getClientIP(context.request), JSON.stringify({ old, new: { user_cleared_date: punchCleared, final_status: finalStatus, final_cleared_date: finalDate, user_cleared_by: editorDisplay }, changes: result?.meta || {}, remarks })).run();
+      .bind('USER_EDIT', clean(row.bitem_id || bitemId), clean(row.fingerprint || fingerprint), editorUsername, editorDisplay, user.role || '', getClientIP(context.request), JSON.stringify({ old, new: { user_cleared_date: punchCleared, final_status: finalStatus, final_cleared_date: finalDate, user_cleared_by: editorDisplay, clear_date: isClearAction }, changes: result?.meta || {}, remarks })).run();
   } catch (_) {}
 
   return json({
@@ -149,6 +151,7 @@ export async function handleSave(context, rawBody = {}) {
     final_cleared_date: finalDate,
     user_cleared_date: punchCleared,
     user_cleared_by: editorDisplay,
+    clear_date: isClearAction,
     last_edited_by: editorDisplay,
     source_flag: sourceFlag,
     sync_note: syncNote,
