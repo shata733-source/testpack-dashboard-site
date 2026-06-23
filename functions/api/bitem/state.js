@@ -1,5 +1,6 @@
 import { json, requirePagePermission, getClientIP } from '../../_shared/auth.js';
 import { assertDB, clean, normalizeDate } from '../../_shared/bitem.js';
+import { handleSave } from './save.js';
 
 async function ensureEditTables(env) {
   try {
@@ -98,10 +99,9 @@ export async function onRequestGet(context) {
     await ensureEditTables(context.env);
     const url = new URL(context.request.url);
 
-    // V20 safety fallback: edit through GET when Cloudflare/Pages returns HTML for POST on preview deployments.
-    // This is still protected by the same Bearer token and edit permission check.
+    // V21: edit through the same robust save handler, to keep date/status/name in sync.
     if (url.searchParams.get('op') === 'edit') {
-      return await handleEdit(context, {
+      return await handleSave(context, {
         bitem_id: url.searchParams.get('bitem_id') || url.searchParams.get('id') || '',
         fingerprint: url.searchParams.get('fingerprint') || url.searchParams.get('fp') || '',
         punch_cleared: url.searchParams.get('punch_cleared') || url.searchParams.get('date') || '',
@@ -154,7 +154,7 @@ export async function onRequestPost(context) {
   try {
     let body = {};
     try { body = await context.request.json(); } catch (_) { return json({ ok: false, error: 'Invalid JSON body' }, 400); }
-    return await handleEdit(context, body);
+    return await handleSave(context, body);
   } catch (e) {
     console.error('BITEM_STATE_POST_EDIT_ERROR', e && (e.stack || e.message || e));
     return json({ ok:false, error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);

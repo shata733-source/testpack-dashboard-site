@@ -8943,3 +8943,141 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   setInterval(stableUserNames,1500);
 })();
 </script>
+
+<!-- === V21 BITEM SAVE DATE + USER NAME HARD FIX === -->
+<style id="v21-bitem-save-date-hard-fix-css">
+  #bItemControlPage .bitem-user-cleared-name{font-weight:900;color:var(--accent)!important;white-space:normal!important;}
+  #bItemControlPage .bitem-cleared-cell[data-bitem-saving="1"]{outline:1px solid rgba(0,212,255,.55)!important;}
+</style>
+<script id="v21-bitem-save-date-hard-fix-js">
+(function(){
+  if(window.__V21_BITEM_SAVE_DATE_HARD_FIX__) return;
+  window.__V21_BITEM_SAVE_DATE_HARD_FIX__=true;
+  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
+  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
+  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
+  function isDateText(v){var s=clean(v);return /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})$/.test(s);}
+  function toIso(v){var s=clean(v); if(!s)return ''; var m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if(m)return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0'); m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/); if(m){var y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');} var d=new Date(s); return isNaN(d.getTime())?'':d.toISOString().slice(0,10);}
+  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
+  function authHeaders(json){var h={}; if(json)h['content-type']='application/json'; var t=token(); if(t)h.authorization='Bearer '+t; return h;}
+  function currentUserName(){try{var u=JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'{}');return clean(u.display_name)||clean(u.name)||clean(u.username)||clean(u.sub)||'';}catch(e){return '';}}
+  async function parseJson(res){var txt=await res.text(); var data={}; try{data=txt?JSON.parse(txt):{};}catch(e){var er=new Error((txt||'Bad JSON response').slice(0,320)); er.nonJson=true; er.status=res.status; throw er;} if(!res.ok||data.ok===false)throw new Error(data.error||('HTTP '+res.status)); return data;}
+  async function callSave(url,method,payload){
+    if(method==='GET'){
+      var qs=new URLSearchParams({fingerprint:payload.fingerprint||'',bitem_id:payload.bitem_id||'',punch_cleared:payload.punch_cleared||'',remarks:payload.remarks||'',t:String(Date.now())});
+      return parseJson(await fetch(url+'?'+qs.toString(),{method:'GET',headers:authHeaders(false),cache:'no-store'}));
+    }
+    return parseJson(await fetch(url+(url.indexOf('?')>=0?'&':'?')+'t='+Date.now(),{method:'POST',headers:authHeaders(true),body:JSON.stringify(payload),cache:'no-store'}));
+  }
+  async function saveToServer(id,fp,iso){
+    var payload={bitem_id:id||'',fingerprint:fp||'',punch_cleared:iso||'',remarks:'Inline Punch Cleared update'};
+    var attempts=[
+      ['/api/bitem/save','POST'],
+      ['/api/bitem/edit','POST'],
+      ['/api/bitem/state?op=edit','POST'],
+      ['/api/bitem/save','GET'],
+      ['/api/bitem/edit','GET'],
+      ['/api/bitem/state?op=edit','GET']
+    ];
+    var errors=[];
+    for(var i=0;i<attempts.length;i++){
+      try{return await callSave(attempts[i][0],attempts[i][1],payload);}catch(e){errors.push(attempts[i].join(' ')+': '+(e&&e.message?e.message:e));}
+    }
+    throw new Error(errors.join(' | '));
+  }
+  function parseBtn(tr){
+    var btn=tr&&tr.querySelector&&tr.querySelector('.bitem-edit-btn'); var s=(btn&&btn.getAttribute('onclick'))||'';
+    var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/);
+    return {id:m?dec(m[1]):'',fp:m?dec(m[2]):''};
+  }
+  function rowByIdFp(id,fp){
+    var rows=Array.from(document.querySelectorAll('#bItemControlBody tr'));
+    for(var i=0;i<rows.length;i++){var p=parseBtn(rows[i]); if((fp&&p.fp===fp)||(id&&p.id===id))return rows[i];}
+    return null;
+  }
+  function stateRows(){var api=window.bitemSystemAPI||(window.bitemSystemAPI={}); if(!Array.isArray(api.stateRows))api.stateRows=[]; return api.stateRows;}
+  function findStateRow(id,fp){var rows=stateRows(); for(var i=0;i<rows.length;i++){var r=rows[i]||{}; if((fp&&String(r.fingerprint)===String(fp))||(id&&String(r.bitem_id)===String(id)))return r;} return null;}
+  function userNameFromRow(r){return clean(r&&(r.last_edited_by||r.edited_by_name||r.user_cleared_by));}
+  function dateCell(tr){return tr&&tr.children&&tr.children.length>13?tr.children[13]:null;}
+  function userCell(tr){return tr&&tr.children&&tr.children.length>14?tr.children[14]:null;}
+  function statusCell(tr){return tr&&tr.children&&tr.children.length>12?tr.children[12]:null;}
+  function noteCell(tr){return tr&&tr.children&&tr.children.length>15?tr.children[15]:null;}
+  function clearedPill(){return '<span class="bitem-status-pill cleared">✓ CLEARED</span>';}
+  function updateState(id,fp,iso,name,row){
+    var rows=stateRows(), found=false;
+    rows.forEach(function(r){
+      if((fp&&String(r.fingerprint)===String(fp))||(id&&String(r.bitem_id)===String(id))){
+        found=true;
+        if(row&&typeof row==='object')Object.assign(r,row);
+        r.user_cleared_date=iso;
+        r.final_cleared_date=iso;
+        r.final_status=iso?'CLEARED':'OPEN';
+        r.last_edited_by=name||r.last_edited_by||'';
+        r.user_cleared_by=name||r.user_cleared_by||'';
+        r.source_flag=iso?'USER_EDITED':(r.source_flag||'');
+        r.sync_note=iso?'User updated Punch Cleared date; final status recalculated immediately.':(r.sync_note||'');
+      }
+    });
+    if(!found){rows.push({bitem_id:id,fingerprint:fp,user_cleared_date:iso,final_cleared_date:iso,final_status:iso?'CLEARED':'OPEN',last_edited_by:name,user_cleared_by:name,source_flag:iso?'USER_EDITED':'',sync_note:iso?'User updated Punch Cleared date; final status recalculated immediately.':''});}
+    try{if(window.bitemSystemAPI)window.bitemSystemAPI.total=rows.length;}catch(e){}
+  }
+  function patchRow(tr,iso,name){
+    if(!tr)return;
+    var dc=dateCell(tr); if(dc){dc.classList.remove('bitem-cell-editing');dc.removeAttribute('data-bitem-saving');dc.innerHTML=esc(iso||'');dc.title=iso||'';}
+    var sc=statusCell(tr); if(sc&&iso)sc.innerHTML=clearedPill();
+    var uc=userCell(tr); if(uc){uc.classList.add('bitem-user-cleared-name');uc.innerHTML=esc(name||'');uc.title=name?('Cleared by: '+name):'';}
+    var nc=noteCell(tr); if(nc&&iso){nc.innerHTML='User updated Punch Cleared date; final status recalculated immediately.';nc.title=nc.innerText;}
+  }
+  function enforceUserClearedNames(){
+    if(window.__BITEM_INLINE_EDIT_LOCK)return;
+    document.querySelectorAll('#bItemControlBody tr').forEach(function(tr){
+      var uc=userCell(tr); if(!uc)return;
+      var p=parseBtn(tr), r=findStateRow(p.id,p.fp), nm=userNameFromRow(r);
+      var txt=clean(uc.textContent);
+      if(nm){if(txt!==nm){uc.classList.add('bitem-user-cleared-name');uc.innerHTML=esc(nm);uc.title='Cleared by: '+nm;}}
+      else if(isDateText(txt)){uc.classList.add('bitem-user-cleared-name');uc.innerHTML='';uc.title='';}
+    });
+  }
+  function findDateCellForEdit(id,fp){var tr=rowByIdFp(id,fp);return {tr:tr,cell:dateCell(tr)};}
+  function openPicker(input){try{input.focus({preventScroll:true});}catch(e){try{input.focus();}catch(x){}}try{if(input.showPicker)input.showPicker();}catch(e){}}
+  window.bitemStartSystemClearedEdit=function(eid,efp,eold){
+    if(window.__CCC_VIEW_ONLY__){alert('View only account. Editing is disabled for this user.');return;}
+    var id=dec(eid), fp=dec(efp), old=dec(eold), f=findDateCellForEdit(id,fp), tr=f.tr, cell=f.cell;
+    if(!cell){alert('Could not find the selected row date cell. Please reload B Item and try again.');return;}
+    document.querySelectorAll('#bItemControlPage .bitem-cell-editing').forEach(function(td){td.classList.remove('bitem-cell-editing');});
+    window.__BITEM_INLINE_EDIT_LOCK=true;
+    var oldHtml=cell.innerHTML, oldIso=toIso(old||cell.textContent);
+    cell.classList.add('bitem-cell-editing');cell.setAttribute('data-bitem-saving','0');
+    cell.innerHTML='<div class="bitem-inline-edit" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onpointerdown="event.stopPropagation()">'+
+      '<input class="bitem-inline-input" type="date" value="'+esc(oldIso)+'">'+
+      '<button class="bitem-date-open-btn" type="button" title="Open calendar">📅</button>'+ 
+      '<button class="bitem-save-btn" type="button" title="Save">✓</button>'+ 
+      '<button class="bitem-cancel-btn" type="button" title="Cancel">×</button>'+ 
+      '</div>';
+    var inp=cell.querySelector('input'), cal=cell.querySelector('.bitem-date-open-btn'), save=cell.querySelector('.bitem-save-btn'), cancel=cell.querySelector('.bitem-cancel-btn');
+    [inp,cal,save,cancel].forEach(function(el){if(!el)return;['click','mousedown','pointerdown'].forEach(function(n){el.addEventListener(n,function(ev){ev.stopPropagation();});});});
+    if(cal)cal.onclick=function(ev){ev.stopPropagation();openPicker(inp);};
+    if(cancel)cancel.onclick=function(ev){ev.stopPropagation();window.__BITEM_INLINE_EDIT_LOCK=false;cell.classList.remove('bitem-cell-editing');cell.removeAttribute('data-bitem-saving');cell.innerHTML=oldHtml;setTimeout(enforceUserClearedNames,80);};
+    if(save)save.onclick=async function(ev){
+      ev.stopPropagation();
+      var iso=toIso(inp&&inp.value); if(!iso){alert('Please select a valid date.');return;}
+      var localName=currentUserName();
+      try{
+        save.disabled=true; save.textContent='…'; cell.setAttribute('data-bitem-saving','1');
+        var data=await saveToServer(id,fp,iso);
+        var row=data.row||{};
+        var name=clean(data.user_cleared_by)||clean(data.last_edited_by)||userNameFromRow(row)||localName;
+        var savedDate=toIso(data.final_cleared_date||data.user_cleared_date||data.punch_cleared||row.final_cleared_date||row.user_cleared_date||iso)||iso;
+        updateState(id,fp,savedDate,name,row);
+        window.__BITEM_INLINE_EDIT_LOCK=false;
+        patchRow(tr,savedDate,name);
+        setTimeout(enforceUserClearedNames,50);setTimeout(enforceUserClearedNames,250);
+      }catch(e){save.disabled=false;save.textContent='✓';cell.setAttribute('data-bitem-saving','0');alert('Save failed: '+(e&&e.message?e.message:e));}
+    };
+  };
+  try{bitemStartSystemClearedEdit=window.bitemStartSystemClearedEdit;}catch(e){}
+  // Keep USER CLEARED as a name only. Old legacy scripts may try to put the date there; this wins immediately.
+  setInterval(enforceUserClearedNames,300);
+  try{new MutationObserver(function(){enforceUserClearedNames();}).observe(document.getElementById('bItemControlBody')||document.body,{childList:true,subtree:true,characterData:true});}catch(e){}
+})();
+</script>
