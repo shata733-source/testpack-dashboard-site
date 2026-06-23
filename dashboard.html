@@ -8529,21 +8529,31 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 </script>
 
 <script>
-/* === V30 Dashboard B Item Registry Source - throttled and safe ===
-   B Item Control / D1 is the source of Punch B dashboard counts.
-   This version prevents repeated KPI requests and handles temporary API errors without freezing the dashboard.
+/* === V31 Dashboard B Item Registry Stable Override ===
+   Punch B dashboard card is rendered from D1 bitem_registry only.
+   This prevents the old embedded/snapshot Punch B value from repainting over the live B Item KPI.
 */
 (function(){
-  if (window.__V30_DASH_BITEM_REGISTRY__) return;
+  if (window.__V31_DASH_BITEM_REGISTRY_STABLE__) return;
+  window.__V31_DASH_BITEM_REGISTRY_STABLE__ = true;
   window.__V30_DASH_BITEM_REGISTRY__ = true;
   window.__V29_DASH_BITEM_REGISTRY__ = true;
 
   var inFlight = null;
   var lastKey = '';
+  var lastKpi = null;
   var lastOkAt = 0;
   var lastFailAt = 0;
   var timer = null;
+  var observerTimer = null;
 
+  // Prevent old rebuild hook errors from repeatedly repainting Punch cards.
+  if (typeof window.rebuildPunchStatsFromTestPackRowsIfNeeded !== 'function') {
+    window.rebuildPunchStatsFromTestPackRowsIfNeeded = function(){ return false; };
+    try { rebuildPunchStatsFromTestPackRowsIfNeeded = window.rebuildPunchStatsFromTestPackRowsIfNeeded; } catch(e) {}
+  }
+
+  function clean(v){ return (v == null ? '' : String(v)).trim(); }
   function filterList(v){
     if (Array.isArray(v)) return v.filter(Boolean).filter(function(x){ return String(x).toUpperCase() !== 'ALL'; });
     if (!v || String(v).toUpperCase() === 'ALL') return [];
@@ -8577,36 +8587,68 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     } catch(e) {}
     return p;
   }
+  function fmtTotal(v){
+    v = Number(v || 0);
+    return v >= 1000 ? (v/1000).toFixed(1) + 'K' : v.toLocaleString();
+  }
+  function fmt(v){ return Number(v || 0).toLocaleString(); }
   function punchBoxHtml(obj){
     var total = Number(obj && obj.total || 0);
     var cleared = Number(obj && obj.cleared || 0);
-    var balance = Number(obj && obj.balance || Math.max(total-cleared,0));
+    var balance = Number(obj && obj.balance);
+    if (!Number.isFinite(balance)) balance = Math.max(total - cleared, 0);
     var pc = total > 0 ? Math.round(cleared / total * 100) : 0;
-    var fmt = function(v){ return Number(v || 0).toLocaleString(); };
-    return '<div class="punch-box" data-bitem-registry="1">' +
+    return '<div class="punch-box" data-bitem-registry="v31" data-bitem-total="'+total+'" data-bitem-cleared="'+cleared+'" data-bitem-balance="'+balance+'">' +
       '<div class="punch-cat">Punch B</div>' +
-      '<div class="punch-total" style="color:var(--orange)">'+fmt(total)+'</div>' +
+      '<div class="punch-total" style="color:var(--orange)">'+fmtTotal(total)+'</div>' +
       '<div class="punch-sub">Cleared: '+fmt(cleared)+'</div>' +
       '<div class="punch-sub" style="color:var(--red)">Balance: '+fmt(balance)+'</div>' +
       '<div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:var(--orange)"></div></div>' +
-      '<div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared · source: B Item Control</div>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div>' +
     '</div>';
   }
-  function replacePunchBCard(kpi){
-    var box = document.getElementById('punchCards');
-    if (!box || !kpi || !kpi.ok) return;
-    var cards = Array.prototype.slice.call(box.children || []);
-    if (cards.length >= 2) cards[1].outerHTML = punchBoxHtml(kpi.punchB || kpi);
+  function findPunchBCard(container){
+    if (!container) return null;
+    var cards = Array.prototype.slice.call(container.children || []);
+    for (var i=0;i<cards.length;i++){
+      var cat = cards[i].querySelector && cards[i].querySelector('.punch-cat');
+      if (cat && /Punch\s*B/i.test(cat.textContent || '')) return cards[i];
+    }
+    return cards.length >= 2 ? cards[1] : null;
   }
-  async function runRefresh(){
+  function applyKpiToContainer(containerId, kpi){
+    if (!kpi || !kpi.ok) return false;
+    var obj = kpi.punchB || kpi;
+    var box = document.getElementById(containerId);
+    if (!box) return false;
+    var card = findPunchBCard(box);
+    if (!card) return false;
+    var total = Number(obj.total || 0), cleared = Number(obj.cleared || 0);
+    var balance = Number(obj.balance); if (!Number.isFinite(balance)) balance = Math.max(total-cleared,0);
+    if (card.getAttribute('data-bitem-registry') === 'v31' &&
+        Number(card.getAttribute('data-bitem-total')) === total &&
+        Number(card.getAttribute('data-bitem-cleared')) === cleared &&
+        Number(card.getAttribute('data-bitem-balance')) === balance) return true;
+    card.outerHTML = punchBoxHtml(obj);
+    return true;
+  }
+  function applyCachedKpi(){
+    if (!lastKpi || !lastKpi.ok) return;
+    applyKpiToContainer('punchCards', lastKpi);
+    applyKpiToContainer('punchPageCards', lastKpi);
+  }
+  async function runRefresh(force){
     var params = dashboardBitemParams();
     var key = params.toString();
     var now = Date.now();
-    // If the same KPI succeeded very recently, do not hammer the API.
-    if (key === lastKey && lastOkAt && now - lastOkAt < 2500) return;
-    // If the same KPI failed recently, wait before trying again.
-    if (key === lastKey && lastFailAt && now - lastFailAt < 8000) return;
+
+    // Apply cached KPI immediately before any network call so the old snapshot never visually wins.
+    if (key === lastKey && lastKpi) applyCachedKpi();
+
+    if (!force && key === lastKey && lastOkAt && now - lastOkAt < 60000) return;
+    if (!force && key === lastKey && lastFailAt && now - lastFailAt < 12000) return;
     if (inFlight) return inFlight;
+
     lastKey = key;
     inFlight = fetch('/api/bitem/kpi?' + key + '&_=' + now, { headers: tokenHeaders(), cache: 'no-store' })
       .then(async function(res){
@@ -8622,9 +8664,10 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
           lastFailAt = Date.now();
           return;
         }
+        lastKpi = data;
         lastOkAt = Date.now();
         lastFailAt = 0;
-        replacePunchBCard(data);
+        applyCachedKpi();
       })
       .catch(function(e){
         lastFailAt = Date.now();
@@ -8633,38 +8676,76 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
       .finally(function(){ inFlight = null; });
     return inFlight;
   }
-  function scheduleRefresh(delay){
+  function scheduleRefresh(delay, force){
     clearTimeout(timer);
-    timer = setTimeout(runRefresh, delay == null ? 450 : delay);
+    timer = setTimeout(function(){ runRefresh(!!force); }, delay == null ? 350 : delay);
   }
-  window.refreshDashboardBItemKpi = function(){ scheduleRefresh(100); };
+  window.refreshDashboardBItemKpi = function(force){ scheduleRefresh(50, !!force); };
 
   function patchRenderOverview(){
-    if (typeof window.renderOverview === 'function' && !window.renderOverview.__bitemRegistryPatchedV30) {
+    if (typeof window.renderOverview === 'function' && !window.renderOverview.__bitemRegistryPatchedV31) {
       var old = window.renderOverview;
       window.renderOverview = function(){
         var out = old.apply(this, arguments);
-        scheduleRefresh(650);
+        applyCachedKpi();
+        scheduleRefresh(250, false);
         return out;
       };
-      window.renderOverview.__bitemRegistryPatchedV30 = true;
+      window.renderOverview.__bitemRegistryPatchedV31 = true;
       try { renderOverview = window.renderOverview; } catch(e) {}
     }
   }
+  function patchRenderPunchPageCards(){
+    if (typeof window.renderPunchPageCards === 'function' && !window.renderPunchPageCards.__bitemRegistryPatchedV31) {
+      var old = window.renderPunchPageCards;
+      window.renderPunchPageCards = function(){
+        var out = old.apply(this, arguments);
+        applyCachedKpi();
+        scheduleRefresh(250, false);
+        return out;
+      };
+      window.renderPunchPageCards.__bitemRegistryPatchedV31 = true;
+      try { renderPunchPageCards = window.renderPunchPageCards; } catch(e) {}
+    }
+  }
   function patchRefresh(){
-    if (typeof window.refresh === 'function' && !window.refresh.__bitemRegistryPatchedV30) {
+    if (typeof window.refresh === 'function' && !window.refresh.__bitemRegistryPatchedV31) {
       var old = window.refresh;
       window.refresh = function(){
         var out = old.apply(this, arguments);
-        scheduleRefresh(1200);
+        applyCachedKpi();
+        scheduleRefresh(350, false);
         return out;
       };
-      window.refresh.__bitemRegistryPatchedV30 = true;
+      window.refresh.__bitemRegistryPatchedV31 = true;
       try { refresh = window.refresh; } catch(e) {}
     }
   }
-  function boot(){ patchRenderOverview(); patchRefresh(); scheduleRefresh(1200); }
+  function observePunchContainers(){
+    if (!('MutationObserver' in window)) return;
+    ['punchCards','punchPageCards'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (!el || el.__bitemRegistryObserverV31) return;
+      el.__bitemRegistryObserverV31 = true;
+      new MutationObserver(function(){
+        clearTimeout(observerTimer);
+        observerTimer = setTimeout(applyCachedKpi, 0);
+      }).observe(el, { childList:true, subtree:false });
+    });
+  }
+  function boot(){
+    patchRenderOverview();
+    patchRenderPunchPageCards();
+    patchRefresh();
+    observePunchContainers();
+    applyCachedKpi();
+    scheduleRefresh(500, true);
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-  window.addEventListener('focus', function(){ scheduleRefresh(600); });
+  window.addEventListener('focus', function(){ scheduleRefresh(250, true); });
+  document.addEventListener('click', function(e){
+    var t = e.target;
+    if (t && (t.closest && (t.closest('.tab') || t.closest('.fbtn') || t.closest('.multi-dd') || t.closest('.filter')))) scheduleRefresh(350, true);
+  }, true);
 })();
 </script>
