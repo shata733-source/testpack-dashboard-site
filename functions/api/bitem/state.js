@@ -19,6 +19,7 @@ async function ensureEditTables(env) {
   } catch (_) {}
   const regAlters = [
     "ALTER TABLE bitem_registry ADD COLUMN user_cleared_date TEXT",
+    "ALTER TABLE bitem_registry ADD COLUMN user_cleared_by TEXT",
     "ALTER TABLE bitem_registry ADD COLUMN final_status TEXT",
     "ALTER TABLE bitem_registry ADD COLUMN final_cleared_date TEXT",
     "ALTER TABLE bitem_registry ADD COLUMN last_edited_by TEXT",
@@ -53,6 +54,7 @@ async function handleEdit(context, body) {
 
   const old = {
     user_cleared_date: row.user_cleared_date || '',
+    user_cleared_by: row.user_cleared_by || row.last_edited_by || '',
     final_status: row.final_status || '',
     final_cleared_date: row.final_cleared_date || '',
     last_edited_by: row.last_edited_by || ''
@@ -67,14 +69,14 @@ async function handleEdit(context, body) {
 
   await context.env.DB.prepare(`
     UPDATE bitem_registry SET
-      user_cleared_date=?, final_status=?, final_cleared_date=?, last_edited_by=?, last_edited_at=datetime('now'),
+      user_cleared_date=?, user_cleared_by=?, final_status=?, final_cleared_date=?, last_edited_by=?, last_edited_at=datetime('now'),
       source_flag=?, sync_note=?, updated_at=datetime('now')
     WHERE fingerprint=?
-  `).bind(punchCleared, finalStatus, finalDate, editorDisplay, sourceFlag, syncNote, row.fingerprint).run();
+  `).bind(punchCleared, editorDisplay, finalStatus, finalDate, editorDisplay, sourceFlag, syncNote, row.fingerprint).run();
 
   const updated = await context.env.DB.prepare(`
     SELECT bitem_id, fingerprint, contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
-           iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date,
+           iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, user_cleared_by,
            last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
     FROM bitem_registry WHERE fingerprint=?
   `).bind(row.fingerprint).first();
@@ -87,7 +89,7 @@ async function handleEdit(context, body) {
   try {
     await context.env.DB.prepare(`INSERT INTO bitem_audit_log(action, bitem_id, fingerprint, username, display_name, role, ip, details, created_at)
       VALUES(?,?,?,?,?,?,?,?,datetime('now'))`)
-      .bind('USER_EDIT', row.bitem_id, row.fingerprint, editorUsername, editorDisplay, user.role || '', getClientIP(context.request), JSON.stringify({ old, new: { user_cleared_date: punchCleared, final_status: finalStatus, final_cleared_date: finalDate, user_cleared_by: editorDisplay }, remarks })).run();
+      .bind('USER_EDIT', row.bitem_id, row.fingerprint, editorUsername, editorDisplay, user.role || '', getClientIP(context.request), JSON.stringify({ old, new: { user_cleared_date: punchCleared, user_cleared_by: editorDisplay, final_status: finalStatus, final_cleared_date: finalDate }, remarks })).run();
   } catch (_) {}
 
   return json({ ok: true, row: updated, user_cleared_by: editorDisplay });

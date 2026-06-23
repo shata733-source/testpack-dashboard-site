@@ -19,6 +19,7 @@ async function ensureEditTables(env) {
   } catch (_) {}
   const regAlters = [
     'ALTER TABLE bitem_registry ADD COLUMN user_cleared_date TEXT',
+    'ALTER TABLE bitem_registry ADD COLUMN user_cleared_by TEXT',
     'ALTER TABLE bitem_registry ADD COLUMN final_status TEXT',
     'ALTER TABLE bitem_registry ADD COLUMN final_cleared_date TEXT',
     'ALTER TABLE bitem_registry ADD COLUMN last_edited_by TEXT',
@@ -47,13 +48,13 @@ async function findBItem(env, bitemId, fingerprint) {
 async function selectUpdated(env, row) {
   if (row.fingerprint) return await env.DB.prepare(`
     SELECT bitem_id, fingerprint, contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
-           iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date,
+           iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, user_cleared_by,
            last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
     FROM bitem_registry WHERE fingerprint=? LIMIT 1
   `).bind(row.fingerprint).first();
   return await env.DB.prepare(`
     SELECT bitem_id, fingerprint, contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
-           iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date,
+           iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, user_cleared_by,
            last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
     FROM bitem_registry WHERE bitem_id=? LIMIT 1
   `).bind(row.bitem_id || '').first();
@@ -83,6 +84,7 @@ export async function handleSave(context, rawBody = {}) {
 
   const old = {
     user_cleared_date: clean(row.user_cleared_date || ''),
+    user_cleared_by: clean(row.user_cleared_by || row.last_edited_by || ''),
     final_status: clean(row.final_status || ''),
     final_cleared_date: clean(row.final_cleared_date || ''),
     last_edited_by: clean(row.last_edited_by || '')
@@ -118,6 +120,7 @@ export async function handleSave(context, rawBody = {}) {
   const result = await context.env.DB.prepare(`
     UPDATE bitem_registry SET
       user_cleared_date=?,
+      user_cleared_by=?,
       final_status=?,
       final_cleared_date=?,
       last_edited_by=?,
@@ -126,7 +129,7 @@ export async function handleSave(context, rawBody = {}) {
       sync_note=?,
       updated_at=datetime('now')
     WHERE ${whereCol}=?
-  `).bind(punchCleared, finalStatus, finalDate, editorDisplay, sourceFlag, syncNote, whereVal).run();
+  `).bind(punchCleared, editorDisplay, finalStatus, finalDate, editorDisplay, sourceFlag, syncNote, whereVal).run();
 
   const updated = await selectUpdated(context.env, row);
 
@@ -139,7 +142,7 @@ export async function handleSave(context, rawBody = {}) {
   try {
     await context.env.DB.prepare(`INSERT INTO bitem_audit_log(action, bitem_id, fingerprint, username, display_name, role, ip, details, created_at)
       VALUES(?,?,?,?,?,?,?,?,datetime('now'))`)
-      .bind('USER_EDIT', clean(row.bitem_id || bitemId), clean(row.fingerprint || fingerprint), editorUsername, editorDisplay, user.role || '', getClientIP(context.request), JSON.stringify({ old, new: { user_cleared_date: punchCleared, final_status: finalStatus, final_cleared_date: finalDate, user_cleared_by: editorDisplay, clear_date: isClearAction }, changes: result?.meta || {}, remarks })).run();
+      .bind('USER_EDIT', clean(row.bitem_id || bitemId), clean(row.fingerprint || fingerprint), editorUsername, editorDisplay, user.role || '', getClientIP(context.request), JSON.stringify({ old, new: { user_cleared_date: punchCleared, user_cleared_by: editorDisplay, final_status: finalStatus, final_cleared_date: finalDate, clear_date: isClearAction }, changes: result?.meta || {}, remarks })).run();
   } catch (_) {}
 
   return json({
@@ -158,6 +161,7 @@ export async function handleSave(context, rawBody = {}) {
     row: updated || {
       ...row,
       user_cleared_date: punchCleared,
+      user_cleared_by: editorDisplay,
       final_status: finalStatus,
       final_cleared_date: finalDate,
       last_edited_by: editorDisplay,
