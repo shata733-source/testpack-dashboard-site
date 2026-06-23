@@ -105,7 +105,9 @@ export async function onRequestGet(context) {
         bitem_id: url.searchParams.get('bitem_id') || url.searchParams.get('id') || '',
         fingerprint: url.searchParams.get('fingerprint') || url.searchParams.get('fp') || '',
         punch_cleared: url.searchParams.get('punch_cleared') || url.searchParams.get('date') || '',
-        remarks: url.searchParams.get('remarks') || 'Inline Punch Cleared update'
+        remarks: url.searchParams.get('remarks') || 'Inline Punch Cleared update',
+        clear_date: url.searchParams.get('clear_date') || url.searchParams.get('clearDate') || '',
+        action: url.searchParams.get('action') || ''
       });
     }
 

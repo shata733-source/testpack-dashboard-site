@@ -8348,7 +8348,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     if(u.includes('REMOVED_FROM_EXCEL')||u.includes('REMOVED')) return 'This comment did not return in the latest FMS / CCC Excel source.';
     return n;
   }
-  function v24UserCleared(r){var src=(r&&r.__source)||{};var hasDate=C(src.user_cleared_date)||C(r&&r.__d1_user_cleared_date)||C(r&&r.user_cleared_date);var name=C(src.last_edited_by)||C(src.edited_by_name)||C(src.user_cleared_by)||C(r&&r.last_edited_by)||C(r&&r.edited_by_name)||C(r&&r.user_cleared_by)||C(r&&r.__d1_last_edited_by);return hasDate?name:'';}
+  function v24UserCleared(r){var src=(r&&r.__source)||{};var name=C(src.last_edited_by)||C(src.edited_by_name)||C(src.user_cleared_by)||C(r&&r.last_edited_by)||C(r&&r.edited_by_name)||C(r&&r.user_cleared_by)||C(r&&r.__d1_last_edited_by);return /^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$|^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(String(name||'').trim())?'':name;}
   function v24EnsureBItemTools(){
     try{
       const tools=document.querySelector('#bItemControlPage .bitem-tools'); if(!tools)return;
@@ -8542,861 +8542,126 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 })();
 </script>
 
-<!-- === V15 BITEM DATE PICKER STABILITY FIX === -->
-<style id="v15-bitem-date-picker-fix-css">
-  #bItemControlPage .bitem-cleared-cell{cursor:default!important;}
-  #bItemControlPage .bitem-cleared-cell .bitem-inline-edit{overflow:visible!important;position:relative;z-index:50;}
-  #bItemControlPage .bitem-inline-input{min-width:138px!important;}
-  #bItemControlPage .bitem-date-open-btn{height:30px;min-width:32px;border-radius:7px;border:1px solid rgba(0,212,255,.35);background:rgba(0,212,255,.08);color:var(--accent);font-weight:900;cursor:pointer;}
-  #bItemControlPage .bitem-date-open-btn:hover{background:rgba(0,212,255,.16)}
+
+<!-- === V24 BITEM ROOT FIX: SINGLE EDIT ENGINE / NO DATE IN USER CLEARED === -->
+<style id="v24-bitem-root-fix-css">
+  #bItemControlPage .bitem-inline-edit{
+    display:flex!important;align-items:center!important;gap:6px!important;position:relative!important;z-index:200!important;
+    padding:3px!important;background:#061827!important;border:1px solid rgba(0,212,255,.45)!important;border-radius:9px!important;
+    box-shadow:0 10px 28px rgba(0,0,0,.35)!important;min-width:315px!important;max-width:360px!important;
+  }
+  #bItemControlPage .bitem-inline-input{min-width:132px!important;height:30px!important;background:#07101e!important;color:#f8fafc!important;border:1px solid rgba(0,212,255,.35)!important;border-radius:7px!important;padding:0 8px!important;font-weight:800!important;}
+  #bItemControlPage .bitem-date-open-btn,#bItemControlPage .bitem-save-btn,#bItemControlPage .bitem-cancel-btn,#bItemControlPage .bitem-clear-date-btn{
+    opacity:1!important;filter:none!important;height:30px!important;border-radius:7px!important;font-weight:900!important;cursor:pointer!important;
+    box-shadow:0 1px 0 rgba(255,255,255,.08) inset!important;line-height:1!important;white-space:nowrap!important;
+  }
+  #bItemControlPage .bitem-date-open-btn{min-width:34px!important;background:#0b3a55!important;color:#c7f9ff!important;border:1px solid #00d4ff!important;}
+  #bItemControlPage .bitem-save-btn{min-width:34px!important;background:#063b26!important;color:#b7ffcf!important;border:1px solid #22c55e!important;}
+  #bItemControlPage .bitem-cancel-btn{min-width:34px!important;background:#3b1116!important;color:#ffd1d1!important;border:1px solid #ef4444!important;}
+  #bItemControlPage .bitem-clear-date-btn{min-width:86px!important;background:#44230b!important;color:#ffd7ad!important;border:1px solid #f97316!important;font-size:11px!important;}
+  #bItemControlPage .bitem-date-open-btn:hover,#bItemControlPage .bitem-save-btn:hover,#bItemControlPage .bitem-cancel-btn:hover,#bItemControlPage .bitem-clear-date-btn:hover{transform:translateY(-1px);}
+  #bItemControlPage .bitem-cleared-cell{overflow:visible!important;min-width:170px!important;}
+  #bItemControlPage .bitem-user-cleared-name{font-weight:900!important;color:var(--accent)!important;white-space:normal!important;}
 </style>
-<script id="v15-bitem-date-picker-fix-js">
+<script id="v24-bitem-root-fix-js">
 (function(){
-  if(window.__V15_BITEM_DATE_PICKER_FIX__) return;
-  window.__V15_BITEM_DATE_PICKER_FIX__ = true;
-
-  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
-  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
-  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
-  function toIsoDate(v){
-    var s=clean(v); if(!s) return '';
-    var m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-    if(m) return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
-    m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
-    if(m){var y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');}
-    var d=new Date(s); return isNaN(d.getTime()) ? '' : d.toISOString().slice(0,10);
-  }
-  function isoToDisplay(iso){
-    iso=clean(iso); var m=iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-    return m ? (m[3]+'/'+m[2]+'/'+m[1]) : iso;
-  }
-  function authHeaders(){
-    var h={'content-type':'application/json'};
-    try{var t=localStorage.getItem('ccc_bitem_auth_token')||''; if(t) h.authorization='Bearer '+t;}catch(e){}
-    return h;
-  }
-  async function apiPost(path,payload){
-    var res=await fetch(path,{method:'POST',headers:authHeaders(),body:JSON.stringify(payload||{}),cache:'no-store'});
-    var txt=await res.text(); var data={};
-    try{data=txt?JSON.parse(txt):{};}catch(e){throw new Error((txt||'Bad JSON response').slice(0,220));}
-    if(!res.ok || data.ok===false) throw new Error(data.error||('HTTP '+res.status));
-    return data;
-  }
-  function currentActionRow(){
-    var ae=document.activeElement;
-    var btn=ae && ae.closest ? ae.closest('.bitem-edit-btn') : null;
-    return btn && btn.closest ? btn.closest('tr') : null;
-  }
-  function findTargetCell(id){
-    var row=currentActionRow();
-    if(row){var c=row.querySelector('[data-bitem-system-cleared]'); if(c) return c;}
-    var cells=Array.from(document.querySelectorAll('#bItemControlPage [data-bitem-system-cleared]'));
-    return cells.find(function(c){return clean(c.getAttribute('data-bitem-system-cleared'))===clean(id);}) || null;
-  }
-  function stripDateCellClickHandlers(){
-    document.querySelectorAll('#bItemControlPage .bitem-cleared-cell[data-bitem-system-cleared]').forEach(function(td){
-      td.removeAttribute('onclick');
-      td.onclick=null;
-      td.title='Use the Edit button in the same row to change this date';
-    });
-  }
-  function openNativePicker(inp){
-    if(!inp) return;
-    try{inp.focus({preventScroll:true});}catch(e){try{inp.focus();}catch(x){}}
-    try{ if(inp.showPicker) inp.showPicker(); }catch(e){}
-  }
-  function makeStableEditor(cell,id,fp,oldVal){
-    if(!cell) return;
-    window.__BITEM_INLINE_EDIT_LOCK = true;
-    stripDateCellClickHandlers();
-    document.querySelectorAll('#bItemControlPage .bitem-cell-editing').forEach(function(td){
-      if(td!==cell){ td.classList.remove('bitem-cell-editing'); }
-    });
-    var oldDisplay=clean(cell.textContent)||isoToDisplay(toIsoDate(oldVal));
-    var oldIso=toIsoDate(oldVal||oldDisplay);
-    cell.classList.add('bitem-cell-editing');
-    cell.innerHTML='<div class="bitem-inline-edit" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">'+
-      '<input class="bitem-inline-input" type="date" value="'+esc(oldIso)+'" title="Select punch cleared date">'+
-      '<button class="bitem-date-open-btn" type="button" title="Open calendar">📅</button>'+
-      '<button class="bitem-save-btn" type="button" title="Save">✓</button>'+
-      '<button class="bitem-cancel-btn" type="button" title="Cancel">×</button>'+
-      '</div>';
-    var inp=cell.querySelector('.bitem-inline-input');
-    var cal=cell.querySelector('.bitem-date-open-btn');
-    var save=cell.querySelector('.bitem-save-btn');
-    var cancel=cell.querySelector('.bitem-cancel-btn');
-    [inp,cal,save,cancel].forEach(function(el){
-      if(!el) return;
-      el.addEventListener('click',function(ev){ev.stopPropagation();});
-      el.addEventListener('mousedown',function(ev){ev.stopPropagation();});
-      el.addEventListener('pointerdown',function(ev){ev.stopPropagation();});
-    });
-    if(inp){try{inp.focus({preventScroll:true});}catch(e){}}
-    if(cal) cal.onclick=function(ev){ev.stopPropagation();openNativePicker(inp);};
-    if(cancel) cancel.onclick=function(ev){
-      ev.stopPropagation();
-      window.__BITEM_INLINE_EDIT_LOCK = false;
-      cell.classList.remove('bitem-cell-editing');
-      cell.innerHTML=esc(oldDisplay);
-      stripDateCellClickHandlers();
-    };
-    if(save) save.onclick=async function(ev){
-      ev.stopPropagation();
-      var iso=(inp&&inp.value)||'';
-      try{
-        save.disabled=true; save.textContent='…';
-        await apiPost('/api/bitem/state?op=edit',{bitem_id:id,fingerprint:fp,punch_cleared:iso,remarks:'Inline Punch Cleared update'});
-        window.__BITEM_INLINE_EDIT_LOCK = false;
-        cell.classList.remove('bitem-cell-editing');
-        cell.innerHTML=esc(isoToDisplay(iso));
-        try{ if(typeof window.bitemLoadSystemState==='function') await window.bitemLoadSystemState(true); }catch(e){}
-        if(typeof window.renderBItemControl==='function') window.renderBItemControl(false);
-      }catch(e){
-        save.disabled=false; save.textContent='✓';
-        alert('Save failed: '+(e&&e.message?e.message:e));
-      }
-    };
-  }
-
-  window.bitemStartSystemClearedEdit=function(eid,efp,eold){
-    if(window.__CCC_VIEW_ONLY__){alert('View only account. Editing is disabled for this user.');return;}
-    var id=dec(eid), fp=dec(efp), oldVal=dec(eold);
-    var cell=findTargetCell(id);
-    if(!cell){alert('Could not find the selected row date cell. Please reload B Item and try again.');return;}
-    makeStableEditor(cell,id,fp,oldVal);
-  };
-
-  var realRender=window.renderBItemControl;
-  if(typeof realRender==='function' && !realRender.__v15Wrapped){
-    var wrapped=function(){
-      if(window.__BITEM_INLINE_EDIT_LOCK) return;
-      var out=realRender.apply(this,arguments);
-      setTimeout(stripDateCellClickHandlers,0);
-      return out;
-    };
-    wrapped.__v15Wrapped=true;
-    window.renderBItemControl=wrapped;
-    try{renderBItemControl=wrapped;}catch(e){}
-  }
-  document.addEventListener('DOMContentLoaded',function(){setTimeout(stripDateCellClickHandlers,50);setTimeout(stripDateCellClickHandlers,800);});
-  window.addEventListener('load',function(){setTimeout(stripDateCellClickHandlers,100);setTimeout(stripDateCellClickHandlers,1200);});
-  setInterval(stripDateCellClickHandlers,2000);
-})();
-</script>
-
-<!-- === V16 USER CLEARED NAME + NO BROWSER SYNC FIX === -->
-<style id="v16-user-cleared-name-css">
-  #bItemControlPage .bitem-user-cleared-name{font-weight:900;color:var(--accent)!important;white-space:normal!important;}
-</style>
-<script id="v16-user-cleared-name-no-browser-sync-js">
-(function(){
-  if(window.__V16_USER_CLEARED_NAME_NO_BROWSER_SYNC_FIX__) return;
-  window.__V16_USER_CLEARED_NAME_NO_BROWSER_SYNC_FIX__ = true;
-
-  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
-  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
-  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
-  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
-  async function getState(){
-    var api=window.bitemSystemAPI||(window.bitemSystemAPI={});
-    if(Array.isArray(api.stateRows) && api.stateRows.length) return api.stateRows;
-    try{
-      var h={}; var t=token(); if(t)h.authorization='Bearer '+t;
-      var res=await fetch('/api/bitem/state?include_removed=1&limit=50000&t='+Date.now(),{headers:h,cache:'no-store'});
-      var data=await res.json().catch(function(){return {};});
-      if(res.ok && Array.isArray(data.rows)){api.stateRows=data.rows;api.stateKpi=data.kpi||{};api.total=Number(data.total||data.rows.length||0);return api.stateRows;}
-    }catch(e){}
-    return [];
-  }
-  function fpFromButton(btn){
-    var s=btn && btn.getAttribute('onclick') || '';
-    var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/);
-    return m ? dec(m[2]) : '';
-  }
-  function userNameFromRow(r){
-    var date=clean(r&&r.user_cleared_date);
-    var name=clean(r&&r.last_edited_by) || clean(r&&r.edited_by_name) || clean(r&&r.user_cleared_by);
-    // Show the user only for manual/user edits. FMS or TP-summary closures should not show a user name.
-    if(!date && !(String(r&&r.source_flag||'').toUpperCase().includes('USER'))) return '';
-    return name;
-  }
-  async function applyUserClearedNames(){
-    var rows=await getState();
-    if(!rows.length) return;
-    var byFp=new Map(); rows.forEach(function(r){if(r&&r.fingerprint)byFp.set(String(r.fingerprint),r);});
-    document.querySelectorAll('#bItemControlBody tr').forEach(function(tr){
-      var btn=tr.querySelector('.bitem-edit-btn');
-      var fp=fpFromButton(btn); if(!fp)return;
-      var r=byFp.get(fp); if(!r)return;
-      var tds=tr.children; if(!tds || tds.length<15)return;
-      var td=tds[14]; // USER CLEARED column in current B Item table
-      var name=userNameFromRow(r);
-      td.classList.add('bitem-user-cleared-name');
-      td.innerHTML=esc(name);
-      td.title=name ? ('Cleared by: '+name) : '';
-    });
-  }
-  window.bitemApplyUserClearedNames=applyUserClearedNames;
-
-  function replaceBrowserSyncWithReload(){
-    document.querySelectorAll('button,a').forEach(function(btn){
-      var txt=clean(btn.textContent||'');
-      if(/Sync B Item/i.test(txt)){
-        btn.textContent='↻ Reload B Item';
-        btn.title='B Item sync is handled by the local Selenium/GitHub workflow. This button reloads the current D1 state only.';
-        btn.onclick=function(ev){
-          if(ev)ev.preventDefault();
-          if(window.bitemReloadState) return window.bitemReloadState();
-          if(window.bitemLoadSystemState) return window.bitemLoadSystemState(true).then(function(){ if(window.renderBItemControl) window.renderBItemControl(false); });
-          if(window.renderBItemControl) return window.renderBItemControl(false);
-        };
-      }
-    });
-  }
-  window.bitemRunFullSync=function(){
-    if(window.bitemReloadState) return window.bitemReloadState();
-    if(window.bitemLoadSystemState) return window.bitemLoadSystemState(true).then(function(){ if(window.renderBItemControl) window.renderBItemControl(false); });
-    return Promise.resolve();
-  };
-  window.bitemManualSyncFromUI=window.bitemRunFullSync;
-
-  var realRender=window.renderBItemControl;
-  if(typeof realRender==='function' && !realRender.__v16UserNameWrapped){
-    var wrapped=function(){
-      var out=realRender.apply(this,arguments);
-      setTimeout(function(){replaceBrowserSyncWithReload();applyUserClearedNames();},80);
-      setTimeout(applyUserClearedNames,500);
-      return out;
-    };
-    wrapped.__v16UserNameWrapped=true;
-    window.renderBItemControl=wrapped;
-    try{renderBItemControl=wrapped;}catch(e){}
-  }
-
-  var realStart=window.bitemStartSystemClearedEdit;
-  if(typeof realStart==='function' && !realStart.__v16UserNameWrapped){
-    var startWrapped=function(){
-      window.__V16_EDITING_FP = arguments[1] ? dec(arguments[1]) : '';
-      return realStart.apply(this,arguments);
-    };
-    startWrapped.__v16UserNameWrapped=true;
-    window.bitemStartSystemClearedEdit=startWrapped;
-  }
-
-  document.addEventListener('DOMContentLoaded',function(){setTimeout(function(){replaceBrowserSyncWithReload();applyUserClearedNames();},600);});
-  window.addEventListener('load',function(){setTimeout(function(){replaceBrowserSyncWithReload();applyUserClearedNames();},800);});
-  setInterval(replaceBrowserSyncWithReload,2500);
-})();
-</script>
-
-
-<!-- === V19 BITEM SAVE VIA STATE API + STABLE USER CLEARED NAME === -->
-<script id="v19-bitem-save-state-stable-user-js">
-(function(){
-  if(window.__V19_BITEM_STATE_SAVE_STABLE_USER__) return;
-  window.__V19_BITEM_STATE_SAVE_STABLE_USER__ = true;
-  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
-  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
-  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
-  function fpFromButton(btn){var s=(btn&&btn.getAttribute('onclick'))||'';var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/);return m?dec(m[2]):'';}
-  function userNameFromRow(r){
-    var hasDate=clean(r&&r.user_cleared_date)||clean(r&&r.final_cleared_date);
-    var name=clean(r&&r.last_edited_by)||clean(r&&r.edited_by_name)||clean(r&&r.user_cleared_by);
-    return hasDate?name:'';
-  }
-  function stabilizeUserCleared(){
-    if(window.__BITEM_INLINE_EDIT_LOCK) return;
-    try{
-      var api=window.bitemSystemAPI||{};
-      var rows=Array.isArray(api.stateRows)?api.stateRows:[];
-      if(!rows.length) return;
-      var byFp=new Map(); rows.forEach(function(r){if(r&&r.fingerprint)byFp.set(String(r.fingerprint),r);});
-      document.querySelectorAll('#bItemControlBody tr').forEach(function(tr){
-        var btn=tr.querySelector('.bitem-edit-btn'); var fp=fpFromButton(btn); if(!fp) return;
-        var r=byFp.get(fp); if(!r) return;
-        var cells=tr.children; if(!cells||cells.length<15) return;
-        var td=cells[14]; var nm=userNameFromRow(r);
-        td.classList.add('bitem-user-cleared-name'); td.innerHTML=esc(nm); td.title=nm?('Cleared by: '+nm):'';
-      });
-    }catch(e){}
-  }
-  var oldRender=window.renderBItemControl;
-  if(typeof oldRender==='function' && !oldRender.__v19StableUser){
-    var wrapped=function(){var out=oldRender.apply(this,arguments); setTimeout(stabilizeUserCleared,60); setTimeout(stabilizeUserCleared,250); return out;};
-    wrapped.__v19StableUser=true; window.renderBItemControl=wrapped; try{renderBItemControl=wrapped;}catch(e){}
-  }
-  window.bitemStabilizeUserCleared=stabilizeUserCleared;
-  setInterval(stabilizeUserCleared,3000);
-})();
-</script>
-
-<!-- === V20 ROBUST BITEM SAVE + STABLE USER CLEARED === -->
-<style id="v20-bitem-save-fix-css">
-  #bItemControlPage .bitem-inline-edit{position:relative;z-index:80!important;overflow:visible!important;}
-  #bItemControlPage .bitem-inline-input{min-width:140px!important;}
-  #bItemControlPage .bitem-user-cleared-name{font-weight:900;color:var(--accent)!important;}
-</style>
-<script id="v20-bitem-save-fix-js">
-(function(){
-  if(window.__V20_BITEM_ROBUST_SAVE__) return;
-  window.__V20_BITEM_ROBUST_SAVE__=true;
-  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
-  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
-  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
-  function toIso(v){var s=clean(v); if(!s)return ''; var m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if(m)return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0'); m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/); if(m){var y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');} var d=new Date(s); return isNaN(d.getTime())?'':d.toISOString().slice(0,10);}
-  function disp(iso){iso=toIso(iso)||clean(iso);var m=iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?m[3]+'/'+m[2]+'/'+m[1]:iso;}
-  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
-  function authHeaders(json){var h={}; if(json)h['content-type']='application/json'; var t=token(); if(t)h.authorization='Bearer '+t; return h;}
-  function currentUserName(){try{var u=JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'{}'); return clean(u.display_name)||clean(u.name)||clean(u.username)||clean(u.sub)||'';}catch(e){return '';}}
-  async function parseJsonResponse(res){var txt=await res.text(); var data={}; try{data=txt?JSON.parse(txt):{};}catch(e){var er=new Error((txt||'Bad JSON response').slice(0,260)); er.nonJson=true; er.status=res.status; throw er;} if(!res.ok || data.ok===false){throw new Error(data.error||('HTTP '+res.status));} return data;}
-  async function saveEdit(id,fp,iso){
-    var payload={bitem_id:id,fingerprint:fp,punch_cleared:iso,remarks:'Inline Punch Cleared update'};
-    // Try normal POST first.
-    try{
-      var res=await fetch('/api/bitem/state?op=edit&t='+Date.now(),{method:'POST',headers:authHeaders(true),body:JSON.stringify(payload),cache:'no-store'});
-      return await parseJsonResponse(res);
-    }catch(firstErr){
-      // V20 fallback: same API through GET. This avoids preview deployments that route POST to the HTML fallback.
-      var qs=new URLSearchParams({op:'edit',fingerprint:fp||'',bitem_id:id||'',punch_cleared:iso||'',remarks:'Inline Punch Cleared update',t:String(Date.now())});
-      try{
-        var res2=await fetch('/api/bitem/state?'+qs.toString(),{method:'GET',headers:authHeaders(false),cache:'no-store'});
-        return await parseJsonResponse(res2);
-      }catch(secondErr){
-        var m1=firstErr&&firstErr.message?firstErr.message:firstErr;
-        var m2=secondErr&&secondErr.message?secondErr.message:secondErr;
-        throw new Error('B Item save API is not returning JSON. POST: '+m1+' | GET fallback: '+m2);
-      }
-    }
-  }
-  function findRowByFingerprint(fp,id){
-    var rows=Array.from(document.querySelectorAll('#bItemControlBody tr'));
-    for(var i=0;i<rows.length;i++){
-      var btn=rows[i].querySelector('.bitem-edit-btn');
-      var s=(btn&&btn.getAttribute('onclick'))||'';
-      if(fp && s.indexOf(encodeURIComponent(fp))>=0) return rows[i];
-      if(id && s.indexOf(encodeURIComponent(id))>=0) return rows[i];
-    }
-    return null;
-  }
-  function getDateCellFromRow(tr){return tr&&tr.querySelector?tr.querySelector('.bitem-cleared-cell[data-bitem-system-cleared], .bitem-cleared-cell'):null;}
-  function userCellFromRow(tr){return tr&&tr.children&&tr.children.length>14?tr.children[14]:null;}
-  function finalStatusCellFromRow(tr){return tr&&tr.children&&tr.children.length>12?tr.children[12]:null;}
-  function noteCellFromRow(tr){return tr&&tr.children&&tr.children.length>15?tr.children[15]:null;}
-  function updateStateRow(fp,id,iso,name,updatedRow){
-    var api=window.bitemSystemAPI||(window.bitemSystemAPI={}); var rows=Array.isArray(api.stateRows)?api.stateRows:[];
-    rows.forEach(function(r){
-      if((fp&&String(r.fingerprint)===String(fp)) || (id&&String(r.bitem_id)===String(id))){
-        if(updatedRow){Object.assign(r,updatedRow);}
-        r.user_cleared_date=iso; r.final_cleared_date=iso||r.final_cleared_date||''; r.final_status=iso?'CLEARED':(r.final_status||'OPEN'); r.last_edited_by=name||r.last_edited_by||''; r.source_flag=iso?'USER_EDITED':(r.source_flag||'');
-        if(r.__source){r.__source.user_cleared_date=r.user_cleared_date; r.__source.final_cleared_date=r.final_cleared_date; r.__source.final_status=r.final_status; r.__source.last_edited_by=r.last_edited_by; r.__source.source_flag=r.source_flag;}
-      }
-    });
-  }
-  function statusPill(){return '<span class="bitem-status-pill cleared">✓ CLEARED</span>';}
-  function patchVisualRow(tr,iso,name){
-    var dateCell=getDateCellFromRow(tr); if(dateCell){dateCell.classList.remove('bitem-cell-editing');dateCell.innerHTML=esc(iso||'');}
-    var userCell=userCellFromRow(tr); if(userCell){userCell.classList.add('bitem-user-cleared-name'); userCell.innerHTML=esc(name||''); userCell.title=name?('Cleared by: '+name):'';}
-    var st=finalStatusCellFromRow(tr); if(st && iso) st.innerHTML=statusPill();
-    var note=noteCellFromRow(tr); if(note && iso) note.innerHTML='User updated Punch Cleared date; final status recalculated immediately.';
-  }
-  function stableUserNames(){
-    if(window.__BITEM_INLINE_EDIT_LOCK) return;
-    var api=window.bitemSystemAPI||{}; var rows=Array.isArray(api.stateRows)?api.stateRows:[]; if(!rows.length)return;
-    var byFp=new Map(), byId=new Map(); rows.forEach(function(r){if(r){if(r.fingerprint)byFp.set(String(r.fingerprint),r); if(r.bitem_id)byId.set(String(r.bitem_id),r);}});
-    document.querySelectorAll('#bItemControlBody tr').forEach(function(tr){
-      var btn=tr.querySelector('.bitem-edit-btn'); var s=(btn&&btn.getAttribute('onclick'))||'';
-      var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/); var id=m?dec(m[1]):'', fp=m?dec(m[2]):'';
-      var r=(fp&&byFp.get(fp))||(id&&byId.get(id)); if(!r)return;
-      var hasManual=clean(r.user_cleared_date)||String(r.source_flag||'').toUpperCase().includes('USER');
-      var name=hasManual?(clean(r.last_edited_by)||clean(r.edited_by_name)||clean(r.user_cleared_by)):'';
-      var uc=userCellFromRow(tr); if(uc){uc.classList.add('bitem-user-cleared-name'); uc.innerHTML=esc(name); uc.title=name?('Cleared by: '+name):'';}
-    });
-  }
-  function openPicker(inp){try{inp.focus({preventScroll:true});}catch(e){try{inp.focus();}catch(x){}} try{if(inp.showPicker)inp.showPicker();}catch(e){}}
-  window.bitemStartSystemClearedEdit=function(eid,efp,eold){
-    if(window.__CCC_VIEW_ONLY__){alert('View only account. Editing is disabled for this user.');return;}
-    var id=dec(eid), fp=dec(efp), old=dec(eold), tr=findRowByFingerprint(fp,id), cell=getDateCellFromRow(tr);
-    if(!cell){alert('Could not find the selected row date cell. Please reload B Item and try again.');return;}
-    document.querySelectorAll('#bItemControlPage .bitem-cell-editing').forEach(function(td){td.classList.remove('bitem-cell-editing');});
-    window.__BITEM_INLINE_EDIT_LOCK=true;
-    var oldIso=toIso(old||cell.textContent), oldHtml=cell.innerHTML;
-    cell.classList.add('bitem-cell-editing');
-    cell.innerHTML='<div class="bitem-inline-edit" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">'+
-      '<input class="bitem-inline-input" type="date" value="'+esc(oldIso)+'">'+
-      '<button class="bitem-date-open-btn" type="button" title="Open calendar">📅</button>'+ 
-      '<button class="bitem-save-btn" type="button" title="Save">✓</button>'+ 
-      '<button class="bitem-cancel-btn" type="button" title="Cancel">×</button>'+ 
-      '</div>';
-    var inp=cell.querySelector('input'), cal=cell.querySelector('.bitem-date-open-btn'), save=cell.querySelector('.bitem-save-btn'), cancel=cell.querySelector('.bitem-cancel-btn');
-    [inp,cal,save,cancel].forEach(function(el){if(!el)return; ['click','mousedown','pointerdown'].forEach(function(n){el.addEventListener(n,function(ev){ev.stopPropagation();});});});
-    if(cal)cal.onclick=function(ev){ev.stopPropagation();openPicker(inp);};
-    if(cancel)cancel.onclick=function(ev){ev.stopPropagation();window.__BITEM_INLINE_EDIT_LOCK=false;cell.classList.remove('bitem-cell-editing');cell.innerHTML=oldHtml;stableUserNames();};
-    if(save)save.onclick=async function(ev){
-      ev.stopPropagation(); var iso=(inp&&inp.value)||''; var name=currentUserName();
-      try{save.disabled=true;save.textContent='…'; var data=await saveEdit(id,fp,iso); name=clean(data.user_cleared_by)||clean(data.row&&data.row.last_edited_by)||name; updateStateRow(fp,id,iso,name,data.row); window.__BITEM_INLINE_EDIT_LOCK=false; patchVisualRow(tr,iso,name); setTimeout(stableUserNames,100);}
-      catch(e){save.disabled=false;save.textContent='✓'; alert('Save failed: '+(e&&e.message?e.message:e));}
-    };
-  };
-  try{bitemStartSystemClearedEdit=window.bitemStartSystemClearedEdit;}catch(e){}
-  var oldRender=window.renderBItemControl;
-  if(typeof oldRender==='function' && !oldRender.__v20Robust){var wr=function(){var out=oldRender.apply(this,arguments);setTimeout(stableUserNames,80);setTimeout(stableUserNames,350);return out;};wr.__v20Robust=true;window.renderBItemControl=wr;try{renderBItemControl=wr;}catch(e){}}
-  setInterval(stableUserNames,1500);
-})();
-</script>
-
-<!-- === V21 BITEM SAVE DATE + USER NAME HARD FIX === -->
-<style id="v21-bitem-save-date-hard-fix-css">
-  #bItemControlPage .bitem-user-cleared-name{font-weight:900;color:var(--accent)!important;white-space:normal!important;}
-  #bItemControlPage .bitem-cleared-cell[data-bitem-saving="1"]{outline:1px solid rgba(0,212,255,.55)!important;}
-</style>
-<script id="v21-bitem-save-date-hard-fix-js">
-(function(){
-  if(window.__V21_BITEM_SAVE_DATE_HARD_FIX__) return;
-  window.__V21_BITEM_SAVE_DATE_HARD_FIX__=true;
-  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
-  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
-  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
-  function isDateText(v){var s=clean(v);return /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})$/.test(s);}
-  function toIso(v){var s=clean(v); if(!s)return ''; var m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if(m)return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0'); m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/); if(m){var y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');} var d=new Date(s); return isNaN(d.getTime())?'':d.toISOString().slice(0,10);}
-  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
-  function authHeaders(json){var h={}; if(json)h['content-type']='application/json'; var t=token(); if(t)h.authorization='Bearer '+t; return h;}
-  function currentUserName(){try{var u=JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'{}');return clean(u.display_name)||clean(u.name)||clean(u.username)||clean(u.sub)||'';}catch(e){return '';}}
-  async function parseJson(res){var txt=await res.text(); var data={}; try{data=txt?JSON.parse(txt):{};}catch(e){var er=new Error((txt||'Bad JSON response').slice(0,320)); er.nonJson=true; er.status=res.status; throw er;} if(!res.ok||data.ok===false)throw new Error(data.error||('HTTP '+res.status)); return data;}
-  async function callSave(url,method,payload){
-    if(method==='GET'){
-      var qs=new URLSearchParams({fingerprint:payload.fingerprint||'',bitem_id:payload.bitem_id||'',punch_cleared:payload.punch_cleared||'',remarks:payload.remarks||'',t:String(Date.now())});
-      return parseJson(await fetch(url+'?'+qs.toString(),{method:'GET',headers:authHeaders(false),cache:'no-store'}));
-    }
-    return parseJson(await fetch(url+(url.indexOf('?')>=0?'&':'?')+'t='+Date.now(),{method:'POST',headers:authHeaders(true),body:JSON.stringify(payload),cache:'no-store'}));
-  }
-  async function saveToServer(id,fp,iso){
-    var payload={bitem_id:id||'',fingerprint:fp||'',punch_cleared:iso||'',remarks:'Inline Punch Cleared update'};
-    var attempts=[
-      ['/api/bitem/save','POST'],
-      ['/api/bitem/edit','POST'],
-      ['/api/bitem/state?op=edit','POST'],
-      ['/api/bitem/save','GET'],
-      ['/api/bitem/edit','GET'],
-      ['/api/bitem/state?op=edit','GET']
-    ];
-    var errors=[];
-    for(var i=0;i<attempts.length;i++){
-      try{return await callSave(attempts[i][0],attempts[i][1],payload);}catch(e){errors.push(attempts[i].join(' ')+': '+(e&&e.message?e.message:e));}
-    }
-    throw new Error(errors.join(' | '));
-  }
-  function parseBtn(tr){
-    var btn=tr&&tr.querySelector&&tr.querySelector('.bitem-edit-btn'); var s=(btn&&btn.getAttribute('onclick'))||'';
-    var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/);
-    return {id:m?dec(m[1]):'',fp:m?dec(m[2]):''};
-  }
-  function rowByIdFp(id,fp){
-    var rows=Array.from(document.querySelectorAll('#bItemControlBody tr'));
-    for(var i=0;i<rows.length;i++){var p=parseBtn(rows[i]); if((fp&&p.fp===fp)||(id&&p.id===id))return rows[i];}
-    return null;
-  }
-  function stateRows(){var api=window.bitemSystemAPI||(window.bitemSystemAPI={}); if(!Array.isArray(api.stateRows))api.stateRows=[]; return api.stateRows;}
-  function findStateRow(id,fp){var rows=stateRows(); for(var i=0;i<rows.length;i++){var r=rows[i]||{}; if((fp&&String(r.fingerprint)===String(fp))||(id&&String(r.bitem_id)===String(id)))return r;} return null;}
-  function userNameFromRow(r){return clean(r&&(r.last_edited_by||r.edited_by_name||r.user_cleared_by));}
-  function dateCell(tr){return tr&&tr.children&&tr.children.length>13?tr.children[13]:null;}
-  function userCell(tr){return tr&&tr.children&&tr.children.length>14?tr.children[14]:null;}
-  function statusCell(tr){return tr&&tr.children&&tr.children.length>12?tr.children[12]:null;}
-  function noteCell(tr){return tr&&tr.children&&tr.children.length>15?tr.children[15]:null;}
-  function clearedPill(){return '<span class="bitem-status-pill cleared">✓ CLEARED</span>';}
-  function updateState(id,fp,iso,name,row){
-    var rows=stateRows(), found=false;
-    rows.forEach(function(r){
-      if((fp&&String(r.fingerprint)===String(fp))||(id&&String(r.bitem_id)===String(id))){
-        found=true;
-        if(row&&typeof row==='object')Object.assign(r,row);
-        r.user_cleared_date=iso;
-        r.final_cleared_date=iso;
-        r.final_status=iso?'CLEARED':'OPEN';
-        r.last_edited_by=name||r.last_edited_by||'';
-        r.user_cleared_by=name||r.user_cleared_by||'';
-        r.source_flag=iso?'USER_EDITED':(r.source_flag||'');
-        r.sync_note=iso?'User updated Punch Cleared date; final status recalculated immediately.':(r.sync_note||'');
-      }
-    });
-    if(!found){rows.push({bitem_id:id,fingerprint:fp,user_cleared_date:iso,final_cleared_date:iso,final_status:iso?'CLEARED':'OPEN',last_edited_by:name,user_cleared_by:name,source_flag:iso?'USER_EDITED':'',sync_note:iso?'User updated Punch Cleared date; final status recalculated immediately.':''});}
-    try{if(window.bitemSystemAPI)window.bitemSystemAPI.total=rows.length;}catch(e){}
-  }
-  function patchRow(tr,iso,name){
-    if(!tr)return;
-    var dc=dateCell(tr); if(dc){dc.classList.remove('bitem-cell-editing');dc.removeAttribute('data-bitem-saving');dc.innerHTML=esc(iso||'');dc.title=iso||'';}
-    var sc=statusCell(tr); if(sc&&iso)sc.innerHTML=clearedPill();
-    var uc=userCell(tr); if(uc){uc.classList.add('bitem-user-cleared-name');uc.innerHTML=esc(name||'');uc.title=name?('Cleared by: '+name):'';}
-    var nc=noteCell(tr); if(nc&&iso){nc.innerHTML='User updated Punch Cleared date; final status recalculated immediately.';nc.title=nc.innerText;}
-  }
-  function enforceUserClearedNames(){
-    if(window.__BITEM_INLINE_EDIT_LOCK)return;
-    document.querySelectorAll('#bItemControlBody tr').forEach(function(tr){
-      var uc=userCell(tr); if(!uc)return;
-      var p=parseBtn(tr), r=findStateRow(p.id,p.fp), nm=userNameFromRow(r);
-      var txt=clean(uc.textContent);
-      if(nm){if(txt!==nm){uc.classList.add('bitem-user-cleared-name');uc.innerHTML=esc(nm);uc.title='Cleared by: '+nm;}}
-      else if(isDateText(txt)){uc.classList.add('bitem-user-cleared-name');uc.innerHTML='';uc.title='';}
-    });
-  }
-  function findDateCellForEdit(id,fp){var tr=rowByIdFp(id,fp);return {tr:tr,cell:dateCell(tr)};}
-  function openPicker(input){try{input.focus({preventScroll:true});}catch(e){try{input.focus();}catch(x){}}try{if(input.showPicker)input.showPicker();}catch(e){}}
-  window.bitemStartSystemClearedEdit=function(eid,efp,eold){
-    if(window.__CCC_VIEW_ONLY__){alert('View only account. Editing is disabled for this user.');return;}
-    var id=dec(eid), fp=dec(efp), old=dec(eold), f=findDateCellForEdit(id,fp), tr=f.tr, cell=f.cell;
-    if(!cell){alert('Could not find the selected row date cell. Please reload B Item and try again.');return;}
-    document.querySelectorAll('#bItemControlPage .bitem-cell-editing').forEach(function(td){td.classList.remove('bitem-cell-editing');});
-    window.__BITEM_INLINE_EDIT_LOCK=true;
-    var oldHtml=cell.innerHTML, oldIso=toIso(old||cell.textContent);
-    cell.classList.add('bitem-cell-editing');cell.setAttribute('data-bitem-saving','0');
-    cell.innerHTML='<div class="bitem-inline-edit" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onpointerdown="event.stopPropagation()">'+
-      '<input class="bitem-inline-input" type="date" value="'+esc(oldIso)+'">'+
-      '<button class="bitem-date-open-btn" type="button" title="Open calendar">📅</button>'+ 
-      '<button class="bitem-save-btn" type="button" title="Save">✓</button>'+ 
-      '<button class="bitem-cancel-btn" type="button" title="Cancel">×</button>'+ 
-      '</div>';
-    var inp=cell.querySelector('input'), cal=cell.querySelector('.bitem-date-open-btn'), save=cell.querySelector('.bitem-save-btn'), cancel=cell.querySelector('.bitem-cancel-btn');
-    [inp,cal,save,cancel].forEach(function(el){if(!el)return;['click','mousedown','pointerdown'].forEach(function(n){el.addEventListener(n,function(ev){ev.stopPropagation();});});});
-    if(cal)cal.onclick=function(ev){ev.stopPropagation();openPicker(inp);};
-    if(cancel)cancel.onclick=function(ev){ev.stopPropagation();window.__BITEM_INLINE_EDIT_LOCK=false;cell.classList.remove('bitem-cell-editing');cell.removeAttribute('data-bitem-saving');cell.innerHTML=oldHtml;setTimeout(enforceUserClearedNames,80);};
-    if(save)save.onclick=async function(ev){
-      ev.stopPropagation();
-      var iso=toIso(inp&&inp.value); if(!iso){alert('Please select a valid date.');return;}
-      var localName=currentUserName();
-      try{
-        save.disabled=true; save.textContent='…'; cell.setAttribute('data-bitem-saving','1');
-        var data=await saveToServer(id,fp,iso);
-        var row=data.row||{};
-        var name=clean(data.user_cleared_by)||clean(data.last_edited_by)||userNameFromRow(row)||localName;
-        var savedDate=toIso(data.final_cleared_date||data.user_cleared_date||data.punch_cleared||row.final_cleared_date||row.user_cleared_date||iso)||iso;
-        updateState(id,fp,savedDate,name,row);
-        window.__BITEM_INLINE_EDIT_LOCK=false;
-        patchRow(tr,savedDate,name);
-        setTimeout(enforceUserClearedNames,50);setTimeout(enforceUserClearedNames,250);
-      }catch(e){save.disabled=false;save.textContent='✓';cell.setAttribute('data-bitem-saving','0');alert('Save failed: '+(e&&e.message?e.message:e));}
-    };
-  };
-  try{bitemStartSystemClearedEdit=window.bitemStartSystemClearedEdit;}catch(e){}
-  // Keep USER CLEARED as a name only. Old legacy scripts may try to put the date there; this wins immediately.
-  setInterval(enforceUserClearedNames,300);
-  try{new MutationObserver(function(){enforceUserClearedNames();}).observe(document.getElementById('bItemControlBody')||document.body,{childList:true,subtree:true,characterData:true});}catch(e){}
-})();
-</script>
-
-
-<!-- === V22 BITEM IMMEDIATE DATE STATUS + USER CLEARED NAME ONLY === -->
-<style id="v22-bitem-immediate-ui-css">
-  #bItemControlPage .bitem-user-cleared-name{font-weight:900;color:var(--accent)!important;white-space:normal!important;}
-</style>
-<script id="v22-bitem-immediate-ui-js">
-(function(){
-  if(window.__V22_BITEM_IMMEDIATE_UI_FIX__) return;
-  window.__V22_BITEM_IMMEDIATE_UI_FIX__=true;
-
-  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
-  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
-  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
-  function isDateLike(v){
-    var s=clean(v);
-    return /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})$/.test(s);
-  }
-  function toIso(v){
-    var s=clean(v); if(!s) return '';
-    var m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-    if(m) return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
-    m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
-    if(m){var y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');}
-    var d=new Date(s); return isNaN(d.getTime())?'':d.toISOString().slice(0,10);
-  }
-  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
-  function authHeaders(json){var h={}; if(json)h['content-type']='application/json'; var t=token(); if(t)h.authorization='Bearer '+t; return h;}
-  function currentUserName(){
-    try{
-      var u=JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'{}');
-      return clean(u.display_name)||clean(u.name)||clean(u.full_name)||clean(u.username)||clean(u.sub)||'';
-    }catch(e){return '';}
-  }
-  async function jsonFetch(url,opt){
-    var res=await fetch(url,opt||{});
-    var txt=await res.text();
-    var data={};
-    try{data=txt?JSON.parse(txt):{};}catch(e){throw new Error((txt||'Bad JSON response').slice(0,280));}
-    if(!res.ok||data.ok===false)throw new Error(data.error||('HTTP '+res.status));
-    return data;
-  }
-  async function saveDate(id,fp,iso){
-    var payload={bitem_id:id||'',fingerprint:fp||'',punch_cleared:iso||'',remarks:'Inline Punch Cleared update'};
-    try{
-      return await jsonFetch('/api/bitem/save?t='+Date.now(),{method:'POST',headers:authHeaders(true),body:JSON.stringify(payload),cache:'no-store'});
-    }catch(e1){
-      return await jsonFetch('/api/bitem/state?op=edit&t='+Date.now(),{method:'POST',headers:authHeaders(true),body:JSON.stringify(payload),cache:'no-store'});
-    }
-  }
-  function pillCleared(){return '<span class="bitem-status-pill cleared">✓ CLEARED</span>';}
-  function parseBtn(tr){
-    var btn=tr&&tr.querySelector&&tr.querySelector('.bitem-edit-btn');
-    var s=(btn&&btn.getAttribute('onclick'))||'';
-    var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/);
-    return {id:m?dec(m[1]):'',fp:m?dec(m[2]):''};
-  }
-  function allRows(){return Array.from(document.querySelectorAll('#bItemControlBody tr'));}
-  function rowByIdFp(id,fp){
-    var rows=allRows();
-    for(var i=0;i<rows.length;i++){var p=parseBtn(rows[i]); if((fp&&p.fp===fp)||(id&&p.id===id))return rows[i];}
-    return null;
-  }
-  function cell(tr,i){return tr&&tr.children&&tr.children.length>i?tr.children[i]:null;}
-  function dateCell(tr){return cell(tr,13);}       // Punch Cleared Date
-  function userCell(tr){return cell(tr,14);}       // USER CLEARED
-  function statusCell(tr){return cell(tr,12);}     // FINAL STATUS
-  function noteCell(tr){return cell(tr,15);}       // NOTE
-  function stateRows(){var api=window.bitemSystemAPI||(window.bitemSystemAPI={}); if(!Array.isArray(api.stateRows))api.stateRows=[]; return api.stateRows;}
-  function findState(id,fp){
-    var rows=stateRows();
-    for(var i=0;i<rows.length;i++){var r=rows[i]||{}; if((fp&&String(r.fingerprint)===String(fp))||(id&&String(r.bitem_id)===String(id)))return r;}
-    return null;
-  }
-  function validName(v){var s=clean(v); return s && !isDateLike(s) ? s : '';}
-  function nameFromRow(r){return validName(r&&(r.last_edited_by||r.edited_by_name||r.user_cleared_by||r.user_name));}
-  function upsertState(id,fp,iso,name,row){
-    var rows=stateRows(), r=findState(id,fp);
-    if(!r){r={bitem_id:id,fingerprint:fp};rows.push(r);}
-    if(row&&typeof row==='object')Object.assign(r,row);
-    r.bitem_id=r.bitem_id||id;
-    r.fingerprint=r.fingerprint||fp;
-    r.user_cleared_date=iso;
-    r.final_cleared_date=iso;
-    r.final_status=iso?'CLEARED':'OPEN';
-    r.last_edited_by=name||r.last_edited_by||'';
-    r.user_cleared_by=name||r.user_cleared_by||'';
-    r.source_flag=iso?'USER_EDITED':(r.source_flag||'');
-    r.sync_note=iso?'User updated Punch Cleared date; final status recalculated immediately.':(r.sync_note||'');
-  }
-  function patchVisibleRow(tr,iso,name){
-    if(!tr)return;
-    var dc=dateCell(tr); if(dc){dc.classList.remove('bitem-cell-editing');dc.removeAttribute('data-bitem-saving');dc.innerHTML=esc(iso||'');dc.title=iso||'';}
-    var sc=statusCell(tr); if(sc&&iso){sc.innerHTML=pillCleared();sc.title='CLEARED';}
-    var uc=userCell(tr); if(uc){uc.classList.add('bitem-user-cleared-name');uc.setAttribute('data-user-cleared-name',name||'');uc.innerHTML=esc(name||'');uc.title=name?('Cleared by: '+name):'';}
-    var nc=noteCell(tr); if(nc&&iso){nc.innerHTML='User updated Punch Cleared date; final status recalculated immediately.';nc.title=nc.innerText;}
-  }
-  function scrubUserCleared(){
-    if(window.__BITEM_INLINE_EDIT_LOCK) return;
-    allRows().forEach(function(tr){
-      var uc=userCell(tr); if(!uc)return;
-      var p=parseBtn(tr), r=findState(p.id,p.fp);
-      var name=validName(uc.getAttribute('data-user-cleared-name'))||nameFromRow(r);
-      var txt=clean(uc.textContent);
-      // This is the hard rule: USER CLEARED is never a date. It is name only or blank.
-      if(name){ if(txt!==name){uc.classList.add('bitem-user-cleared-name');uc.innerHTML=esc(name);uc.title='Cleared by: '+name;} }
-      else if(isDateLike(txt)){ uc.classList.add('bitem-user-cleared-name'); uc.innerHTML=''; uc.title=''; }
-    });
-  }
-  var scrubTimer=0;
-  function scheduleScrub(){ if(scrubTimer)return; scrubTimer=setTimeout(function(){scrubTimer=0;scrubUserCleared();},40); }
-
-  function makeEditor(cellEl,tr,id,fp,oldVal){
-    window.__BITEM_INLINE_EDIT_LOCK=true;
-    var oldHtml=cellEl.innerHTML;
-    var oldIso=toIso(oldVal||cellEl.textContent);
-    cellEl.classList.add('bitem-cell-editing');
-    cellEl.innerHTML='<div class="bitem-inline-edit" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onpointerdown="event.stopPropagation()">'+
-      '<input class="bitem-inline-input" type="date" value="'+esc(oldIso)+'">'+
-      '<button class="bitem-date-open-btn" type="button" title="Open calendar">📅</button>'+ 
-      '<button class="bitem-save-btn" type="button" title="Save">✓</button>'+ 
-      '<button class="bitem-cancel-btn" type="button" title="Cancel">×</button>'+ 
-      '</div>';
-    var inp=cellEl.querySelector('input'), cal=cellEl.querySelector('.bitem-date-open-btn'), save=cellEl.querySelector('.bitem-save-btn'), cancel=cellEl.querySelector('.bitem-cancel-btn');
-    [inp,cal,save,cancel].forEach(function(el){if(!el)return;['click','mousedown','pointerdown'].forEach(function(n){el.addEventListener(n,function(ev){ev.stopPropagation();});});});
-    function openPicker(){try{inp.focus({preventScroll:true});}catch(e){try{inp.focus();}catch(x){}}try{if(inp.showPicker)inp.showPicker();}catch(e){}}
-    if(cal)cal.onclick=function(ev){ev.stopPropagation();openPicker();};
-    if(cancel)cancel.onclick=function(ev){ev.stopPropagation();window.__BITEM_INLINE_EDIT_LOCK=false;cellEl.classList.remove('bitem-cell-editing');cellEl.innerHTML=oldHtml;scheduleScrub();};
-    if(save)save.onclick=async function(ev){
-      ev.stopPropagation();
-      var iso=toIso(inp&&inp.value); if(!iso){alert('Please select a valid date.');return;}
-      var localName=currentUserName();
-      try{
-        save.disabled=true;save.textContent='…';
-        var data=await saveDate(id,fp,iso);
-        var row=data.row||{};
-        var name=validName(data.user_cleared_by)||validName(data.last_edited_by)||nameFromRow(row)||localName;
-        var savedIso=toIso(data.final_cleared_date||data.user_cleared_date||data.punch_cleared||row.final_cleared_date||row.user_cleared_date||iso)||iso;
-        upsertState(id,fp,savedIso,name,row);
-        window.__BITEM_INLINE_EDIT_LOCK=false;
-        patchVisibleRow(tr,savedIso,name);
-        setTimeout(scrubUserCleared,20);setTimeout(scrubUserCleared,150);setTimeout(scrubUserCleared,600);
-      }catch(e){save.disabled=false;save.textContent='✓';alert('Save failed: '+(e&&e.message?e.message:e));}
-    };
-  }
-
-  window.bitemStartSystemClearedEdit=function(eid,efp,eold){
-    if(window.__CCC_VIEW_ONLY__){alert('View only account. Editing is disabled for this user.');return;}
-    var id=dec(eid), fp=dec(efp), old=dec(eold);
-    var tr=rowByIdFp(id,fp), dc=dateCell(tr);
-    if(!dc){alert('Could not find the selected row date cell. Please reload B Item and try again.');return;}
-    document.querySelectorAll('#bItemControlPage .bitem-cell-editing').forEach(function(td){td.classList.remove('bitem-cell-editing');});
-    makeEditor(dc,tr,id,fp,old);
-  };
-  try{bitemStartSystemClearedEdit=window.bitemStartSystemClearedEdit;}catch(e){}
-
-  var oldRender=window.renderBItemControl;
-  if(typeof oldRender==='function' && !oldRender.__v22Wrapped){
-    var wrapped=function(){var out=oldRender.apply(this,arguments);setTimeout(scrubUserCleared,20);setTimeout(scrubUserCleared,180);return out;};
-    wrapped.__v22Wrapped=true; window.renderBItemControl=wrapped; try{renderBItemControl=wrapped;}catch(e){}
-  }
-  document.addEventListener('DOMContentLoaded',function(){setTimeout(scrubUserCleared,250);});
-  window.addEventListener('load',function(){setTimeout(scrubUserCleared,400);});
-  setInterval(scrubUserCleared,500);
-  try{new MutationObserver(scheduleScrub).observe(document.getElementById('bItemControlBody')||document.body,{childList:true,subtree:true,characterData:true});}catch(e){}
-})();
-</script>
-
-
-<!-- === V23 BITEM CLEAR DATE + KEEP USER NAME === -->
-<style id="v23-bitem-clear-date-css">
-  #bItemControlPage .bitem-clear-date-btn{height:30px;min-width:78px;border-radius:7px;border:1px solid rgba(249,115,22,.45);background:rgba(249,115,22,.10);color:#fb923c;font-weight:900;cursor:pointer;font-size:11px}
-  #bItemControlPage .bitem-clear-date-btn:hover{background:rgba(249,115,22,.18)}
-  #bItemControlPage .bitem-user-cleared-name{font-weight:900;color:var(--accent)!important;white-space:normal!important;}
-</style>
-<script id="v23-bitem-clear-date-js">
-(function(){
-  if(window.__V23_BITEM_CLEAR_DATE_FIX__) return;
-  window.__V23_BITEM_CLEAR_DATE_FIX__=true;
+  if(window.__V24_BITEM_ROOT_FIX__) return;
+  window.__V24_BITEM_ROOT_FIX__=true;
 
   function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
   function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
   function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
   function isDateLike(v){var s=clean(v);return /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}|\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4})$/.test(s);}
-  function toIso(v){
-    var s=clean(v); if(!s) return '';
-    var m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-    if(m) return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
-    m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
-    if(m){var y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');}
-    var d=new Date(s); return isNaN(d.getTime())?'':d.toISOString().slice(0,10);
-  }
+  function validName(v){var s=clean(v);return s&&!isDateLike(s)?s:'';}
+  function toIso(v){var s=clean(v); if(!s)return ''; var m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if(m)return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0'); m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/); if(m){var y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');} var d=new Date(s); return isNaN(d.getTime())?'':d.toISOString().slice(0,10);}
   function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
-  function authHeaders(json){var h={}; if(json)h['content-type']='application/json'; var t=token(); if(t)h.authorization='Bearer '+t; return h;}
-  function currentUserName(){try{var u=JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'{}');return clean(u.display_name)||clean(u.name)||clean(u.full_name)||clean(u.username)||clean(u.sub)||'';}catch(e){return '';}}
-  async function jsonFetch(url,opt){
-    var res=await fetch(url,opt||{}); var txt=await res.text(); var data={};
-    try{data=txt?JSON.parse(txt):{};}catch(e){throw new Error((txt||'Bad JSON response').slice(0,280));}
+  function authHeaders(){var h={}; var t=token(); if(t)h.authorization='Bearer '+t; return h;}
+  function currentUserName(){try{var u=JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'{}');return validName(u.display_name)||validName(u.name)||validName(u.full_name)||validName(u.username)||validName(u.sub)||'';}catch(e){return '';}}
+  function parseBtn(tr){var btn=tr&&tr.querySelector&&tr.querySelector('.bitem-edit-btn');var s=(btn&&btn.getAttribute('onclick'))||'';var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/);return {id:m?dec(m[1]):'',fp:m?dec(m[2]):''};}
+  function rows(){return Array.from(document.querySelectorAll('#bItemControlBody tr'));}
+  function rowByIdFp(id,fp){for(var r of rows()){var p=parseBtn(r); if((fp&&p.fp===fp)||(id&&p.id===id))return r;} return null;}
+  function cell(tr,i){return tr&&tr.children&&tr.children.length>i?tr.children[i]:null;}
+  function dateCell(tr){return cell(tr,13);} function userCell(tr){return cell(tr,14);} function statusCell(tr){return cell(tr,12);} function noteCell(tr){return cell(tr,15);}
+  function stateRows(){var api=window.bitemSystemAPI||(window.bitemSystemAPI={}); if(!Array.isArray(api.stateRows))api.stateRows=[]; return api.stateRows;}
+  function findState(id,fp){for(var r of stateRows()){if((fp&&String(r.fingerprint)===String(fp))||(id&&String(r.bitem_id)===String(id)))return r;} return null;}
+  function nameFromState(r){return validName(r&&(r.last_edited_by||r.edited_by_name||r.user_cleared_by||r.user_name));}
+  function statusPill(v){var u=clean(v).toUpperCase(); return u==='CLEARED'?'<span class="bitem-status-pill cleared">✓ CLEARED</span>':'<span class="bitem-status-pill open">NOT CLEARED</span>';}
+
+  async function callSave(id,fp,iso,clearDate){
+    // Use GET on /api/bitem/state because this exact route is already proven to load the B Item rows.
+    // This avoids old preview deployments where POST /api/bitem/save returned the HTML fallback.
+    var qs=new URLSearchParams({op:'edit',bitem_id:id||'',fingerprint:fp||'',punch_cleared:iso||'',clear_date:clearDate?'1':'0',action:clearDate?'clear':'save',remarks:clearDate?'User removed Punch Cleared date':'Inline Punch Cleared update',t:String(Date.now())});
+    var res=await fetch('/api/bitem/state?'+qs.toString(),{method:'GET',headers:authHeaders(),cache:'no-store'});
+    var txt=await res.text(), data={};
+    try{data=txt?JSON.parse(txt):{};}catch(e){throw new Error('B Item API returned HTML instead of JSON. Make sure functions/api/bitem/state.js from V24 is uploaded, then Redeploy.');}
     if(!res.ok||data.ok===false)throw new Error(data.error||('HTTP '+res.status));
     return data;
   }
-  async function saveDate(id,fp,iso,clearDate){
-    var payload={
-      bitem_id:id||'', fingerprint:fp||'', punch_cleared:iso||'',
-      clear_date:clearDate?true:false,
-      action:clearDate?'clear':'save',
-      remarks:clearDate?'User removed Punch Cleared date':'Inline Punch Cleared update'
-    };
-    try{return await jsonFetch('/api/bitem/save?t='+Date.now(),{method:'POST',headers:authHeaders(true),body:JSON.stringify(payload),cache:'no-store'});}catch(e1){
-      return await jsonFetch('/api/bitem/state?op=edit&t='+Date.now(),{method:'POST',headers:authHeaders(true),body:JSON.stringify(payload),cache:'no-store'});
-    }
-  }
-  function parseBtn(tr){var btn=tr&&tr.querySelector&&tr.querySelector('.bitem-edit-btn');var s=(btn&&btn.getAttribute('onclick'))||'';var m=s.match(/bitemStartSystemClearedEdit\('([^']*)','([^']*)'/);return {id:m?dec(m[1]):'',fp:m?dec(m[2]):''};}
-  function allRows(){return Array.from(document.querySelectorAll('#bItemControlBody tr'));}
-  function rowByIdFp(id,fp){var rows=allRows();for(var i=0;i<rows.length;i++){var p=parseBtn(rows[i]);if((fp&&p.fp===fp)||(id&&p.id===id))return rows[i];}return null;}
-  function cell(tr,i){return tr&&tr.children&&tr.children.length>i?tr.children[i]:null;}
-  function dateCell(tr){return cell(tr,13);}       // Punch Cleared Date
-  function userCell(tr){return cell(tr,14);}       // USER CLEARED
-  function statusCell(tr){return cell(tr,12);}     // FINAL STATUS
-  function noteCell(tr){return cell(tr,15);}       // NOTE
-  function stateRows(){var api=window.bitemSystemAPI||(window.bitemSystemAPI={}); if(!Array.isArray(api.stateRows))api.stateRows=[]; return api.stateRows;}
-  function findState(id,fp){var rows=stateRows();for(var i=0;i<rows.length;i++){var r=rows[i]||{}; if((fp&&String(r.fingerprint)===String(fp))||(id&&String(r.bitem_id)===String(id)))return r;} return null;}
-  function validName(v){var s=clean(v);return s&&!isDateLike(s)?s:'';}
-  function nameFromRow(r){return validName(r&&(r.last_edited_by||r.edited_by_name||r.user_cleared_by||r.user_name));}
-  function statusPill(status){
-    var s=clean(status).toUpperCase();
-    if(s==='CLEARED') return '<span class="bitem-status-pill cleared">✓ CLEARED</span>';
-    return '<span class="bitem-status-pill open">NOT CLEARED</span>';
-  }
-  function upsertState(id,fp,iso,name,row,finalStatus,finalDate,sourceFlag,syncNote){
-    var rows=stateRows(), r=findState(id,fp); if(!r){r={bitem_id:id,fingerprint:fp};rows.push(r);} if(row&&typeof row==='object')Object.assign(r,row);
+
+  function upsertState(id,fp,row,iso,clearDate,name){
+    var r=findState(id,fp); if(!r){r={bitem_id:id,fingerprint:fp};stateRows().push(r);} if(row&&typeof row==='object')Object.assign(r,row);
     r.bitem_id=r.bitem_id||id; r.fingerprint=r.fingerprint||fp;
-    r.user_cleared_date=iso||'';
-    r.final_cleared_date=finalDate||'';
-    r.final_status=clean(finalStatus)||((iso||finalDate)?'CLEARED':'OPEN');
-    r.last_edited_by=name||r.last_edited_by||'';
-    r.user_cleared_by=name||r.user_cleared_by||'';
-    r.source_flag=sourceFlag||r.source_flag||'';
-    r.sync_note=syncNote||r.sync_note||'';
+    r.last_edited_by=name||r.last_edited_by||''; r.user_cleared_by=name||r.user_cleared_by||'';
+    // USER CLEARED date is not a display source; when reopened it must be blank but name remains.
+    r.user_cleared_date=clearDate?'':(toIso(row&&row.user_cleared_date)||iso||'');
+    r.final_cleared_date=toIso(row&&row.final_cleared_date)||(!clearDate?iso:'');
+    r.final_status=clean(row&&row.final_status)||((r.final_cleared_date||r.user_cleared_date)?'CLEARED':'OPEN');
+    r.source_flag=clean(row&&row.source_flag)||r.source_flag||''; r.sync_note=clean(row&&row.sync_note)||r.sync_note||'';
   }
-  function patchVisibleRow(tr,iso,name,finalStatus,finalDate,syncNote){
-    if(!tr)return;
-    var dc=dateCell(tr); if(dc){dc.classList.remove('bitem-cell-editing');dc.removeAttribute('data-bitem-saving');dc.innerHTML=esc(iso||finalDate||'');dc.title=iso||finalDate||'';}
-    var sc=statusCell(tr); if(sc){sc.innerHTML=statusPill(finalStatus);sc.title=clean(finalStatus)||((iso||finalDate)?'CLEARED':'NOT CLEARED');}
+  function patchRow(tr,row,iso,clearDate,name){
+    var finalStatus=clean(row&&row.final_status)||((!clearDate&&iso)?'CLEARED':'OPEN');
+    var finalDate=toIso(row&&row.final_cleared_date)||(!clearDate?iso:'');
+    var note=clean(row&&row.sync_note)||(clearDate?'User removed Punch Cleared date; item reopened unless closed by FMS / CCC or TP Summary.':'User updated Punch Cleared date; final status recalculated immediately.');
+    var dc=dateCell(tr); if(dc){dc.classList.remove('bitem-cell-editing');dc.removeAttribute('data-bitem-saving');dc.innerHTML=esc(finalDate);dc.title=finalDate;}
+    var sc=statusCell(tr); if(sc){sc.innerHTML=statusPill(finalStatus);sc.title=finalStatus==='CLEARED'?'CLEARED':'NOT CLEARED';}
     var uc=userCell(tr); if(uc){uc.classList.add('bitem-user-cleared-name');uc.setAttribute('data-user-cleared-name',name||'');uc.innerHTML=esc(name||'');uc.title=name?('Last edited by: '+name):'';}
-    var nc=noteCell(tr); if(nc&&syncNote){nc.innerHTML=esc(syncNote);nc.title=syncNote;}
+    var nc=noteCell(tr); if(nc){nc.innerHTML=esc(note);nc.title=note;}
   }
   function scrubUserCleared(){
-    if(window.__BITEM_INLINE_EDIT_LOCK) return;
-    allRows().forEach(function(tr){
-      var uc=userCell(tr); if(!uc)return;
+    if(window.__BITEM_INLINE_EDIT_LOCK)return;
+    for(var tr of rows()){
+      var uc=userCell(tr); if(!uc)continue;
       var p=parseBtn(tr), r=findState(p.id,p.fp);
-      var name=validName(uc.getAttribute('data-user-cleared-name'))||nameFromRow(r);
+      var name=validName(uc.getAttribute('data-user-cleared-name'))||nameFromState(r);
       var txt=clean(uc.textContent);
-      if(name){if(txt!==name){uc.classList.add('bitem-user-cleared-name');uc.innerHTML=esc(name);uc.title='Last edited by: '+name;}}
-      else if(isDateLike(txt)){uc.classList.add('bitem-user-cleared-name');uc.innerHTML='';uc.title='';}
-    });
+      if(name && txt!==name){uc.classList.add('bitem-user-cleared-name');uc.innerHTML=esc(name);uc.title='Last edited by: '+name;}
+      if(!name && isDateLike(txt)){uc.classList.add('bitem-user-cleared-name');uc.innerHTML='';uc.title='';}
+    }
   }
-  var scrubTimer=0; function scheduleScrub(){if(scrubTimer)return;scrubTimer=setTimeout(function(){scrubTimer=0;scrubUserCleared();},30);}
-  async function commitChange(opts){
-    var id=opts.id, fp=opts.fp, tr=opts.tr, iso=opts.iso||'', clearDate=!!opts.clearDate, saveBtn=opts.btn;
-    var localName=currentUserName();
-    if(saveBtn){saveBtn.disabled=true;saveBtn.textContent='…';}
-    var data=await saveDate(id,fp,iso,clearDate);
-    var row=data.row||{};
-    var name=validName(data.user_cleared_by)||validName(data.last_edited_by)||nameFromRow(row)||localName;
-    var finalStatus=clean(data.final_status||row.final_status)||((iso||data.final_cleared_date||row.final_cleared_date)?'CLEARED':'OPEN');
-    var finalDate=toIso(data.final_cleared_date||row.final_cleared_date||'');
-    var userDate=toIso(data.user_cleared_date||data.punch_cleared||row.user_cleared_date||iso||'');
-    var sourceFlag=clean(data.source_flag||row.source_flag||'');
-    var syncNote=clean(data.sync_note||row.sync_note||(clearDate?'User removed Punch Cleared date; item reopened unless closed by FMS / CCC or TP Summary.':'User updated Punch Cleared date; final status recalculated immediately.'));
-    upsertState(id,fp,userDate,name,row,finalStatus,finalDate,sourceFlag,syncNote);
-    window.__BITEM_INLINE_EDIT_LOCK=false;
-    patchVisibleRow(tr,userDate,name,finalStatus,finalDate,syncNote);
-    setTimeout(scrubUserCleared,20); setTimeout(scrubUserCleared,150); setTimeout(scrubUserCleared,600);
-  }
+  function closeEditorsExcept(cellEl){document.querySelectorAll('#bItemControlPage .bitem-cell-editing').forEach(function(td){if(td!==cellEl){td.classList.remove('bitem-cell-editing');}});}
   function makeEditor(cellEl,tr,id,fp,oldVal){
-    window.__BITEM_INLINE_EDIT_LOCK=true;
-    var oldHtml=cellEl.innerHTML;
-    var oldIso=toIso(oldVal||cellEl.textContent);
-    cellEl.classList.add('bitem-cell-editing');
+    window.__BITEM_INLINE_EDIT_LOCK=true; closeEditorsExcept(cellEl);
+    var oldHtml=cellEl.innerHTML, oldIso=toIso(oldVal||cellEl.textContent);
+    cellEl.classList.add('bitem-cell-editing'); cellEl.setAttribute('data-bitem-saving','0');
     cellEl.innerHTML='<div class="bitem-inline-edit" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onpointerdown="event.stopPropagation()">'+
       '<input class="bitem-inline-input" type="date" value="'+esc(oldIso)+'">'+
       '<button class="bitem-date-open-btn" type="button" title="Open calendar">📅</button>'+ 
       '<button class="bitem-save-btn" type="button" title="Save selected date">✓</button>'+ 
-      '<button class="bitem-clear-date-btn" type="button" title="Remove date but keep user name">Clear</button>'+ 
+      '<button class="bitem-clear-date-btn" type="button" title="Remove date but keep user name">Clear Date</button>'+ 
       '<button class="bitem-cancel-btn" type="button" title="Cancel">×</button>'+ 
       '</div>';
     var inp=cellEl.querySelector('input'), cal=cellEl.querySelector('.bitem-date-open-btn'), save=cellEl.querySelector('.bitem-save-btn'), clearBtn=cellEl.querySelector('.bitem-clear-date-btn'), cancel=cellEl.querySelector('.bitem-cancel-btn');
     [inp,cal,save,clearBtn,cancel].forEach(function(el){if(!el)return;['click','mousedown','pointerdown'].forEach(function(n){el.addEventListener(n,function(ev){ev.stopPropagation();});});});
-    function openPicker(){try{inp.focus({preventScroll:true});}catch(e){try{inp.focus();}catch(x){}}try{if(inp.showPicker)inp.showPicker();}catch(e){}}
-    if(cal)cal.onclick=function(ev){ev.stopPropagation();openPicker();};
-    if(cancel)cancel.onclick=function(ev){ev.stopPropagation();window.__BITEM_INLINE_EDIT_LOCK=false;cellEl.classList.remove('bitem-cell-editing');cellEl.innerHTML=oldHtml;scheduleScrub();};
-    if(save)save.onclick=async function(ev){
-      ev.stopPropagation();
-      var iso=toIso(inp&&inp.value); if(!iso){alert('Please select a valid date, or use Clear to remove the date.');return;}
-      try{await commitChange({id:id,fp:fp,tr:tr,iso:iso,clearDate:false,btn:save});}catch(e){save.disabled=false;save.textContent='✓';alert('Save failed: '+(e&&e.message?e.message:e));}
-    };
-    if(clearBtn)clearBtn.onclick=async function(ev){
-      ev.stopPropagation();
-      if(!confirm('Remove Punch Cleared Date for this row? The user name will remain as last editor.')) return;
-      try{await commitChange({id:id,fp:fp,tr:tr,iso:'',clearDate:true,btn:clearBtn});}catch(e){clearBtn.disabled=false;clearBtn.textContent='Clear';alert('Clear failed: '+(e&&e.message?e.message:e));}
-    };
+    if(cal)cal.onclick=function(ev){ev.stopPropagation();try{inp.focus({preventScroll:true});}catch(e){}try{if(inp.showPicker)inp.showPicker();}catch(e){}};
+    if(cancel)cancel.onclick=function(ev){ev.stopPropagation();window.__BITEM_INLINE_EDIT_LOCK=false;cellEl.classList.remove('bitem-cell-editing');cellEl.innerHTML=oldHtml;setTimeout(scrubUserCleared,60);};
+    async function commit(iso,clearDate,btn){
+      if(btn){btn.disabled=true;btn.textContent='…';}
+      var localName=currentUserName(); var data=await callSave(id,fp,iso,clearDate); var row=data.row||{};
+      var name=validName(data.user_cleared_by)||validName(data.last_edited_by)||nameFromState(row)||localName;
+      upsertState(id,fp,row,iso,clearDate,name); window.__BITEM_INLINE_EDIT_LOCK=false; patchRow(tr,row,iso,clearDate,name); setTimeout(scrubUserCleared,40);
+    }
+    if(save)save.onclick=async function(ev){ev.stopPropagation();var iso=toIso(inp&&inp.value); if(!iso){alert('Please select a valid date, or use Clear Date.');return;} try{await commit(iso,false,save);}catch(e){save.disabled=false;save.textContent='✓';alert('Save failed: '+(e&&e.message?e.message:e));}};
+    if(clearBtn)clearBtn.onclick=async function(ev){ev.stopPropagation(); if(!confirm('Remove Punch Cleared Date for this row? The user name will remain as last editor.')) return; try{await commit('',true,clearBtn);}catch(e){clearBtn.disabled=false;clearBtn.textContent='Clear Date';alert('Clear failed: '+(e&&e.message?e.message:e));}};
   }
   window.bitemStartSystemClearedEdit=function(eid,efp,eold){
     if(window.__CCC_VIEW_ONLY__){alert('View only account. Editing is disabled for this user.');return;}
-    var id=dec(eid), fp=dec(efp), old=dec(eold);
-    var tr=rowByIdFp(id,fp), dc=dateCell(tr);
+    var id=dec(eid), fp=dec(efp), old=dec(eold), tr=rowByIdFp(id,fp), dc=dateCell(tr);
     if(!dc){alert('Could not find the selected row date cell. Please reload B Item and try again.');return;}
-    document.querySelectorAll('#bItemControlPage .bitem-cell-editing').forEach(function(td){td.classList.remove('bitem-cell-editing');});
     makeEditor(dc,tr,id,fp,old);
   };
   try{bitemStartSystemClearedEdit=window.bitemStartSystemClearedEdit;}catch(e){}
-  document.addEventListener('DOMContentLoaded',function(){setTimeout(scrubUserCleared,250);});
-  window.addEventListener('load',function(){setTimeout(scrubUserCleared,400);});
-  setInterval(scrubUserCleared,250);
-  try{new MutationObserver(scheduleScrub).observe(document.getElementById('bItemControlBody')||document.body,{childList:true,subtree:true,characterData:true});}catch(e){}
+  var oldRender=window.renderBItemControl;
+  if(typeof oldRender==='function' && !oldRender.__v24RootWrapped){var wrapped=function(){var out=oldRender.apply(this,arguments);setTimeout(scrubUserCleared,50);return out;};wrapped.__v24RootWrapped=true;window.renderBItemControl=wrapped;try{renderBItemControl=wrapped;}catch(e){}}
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(scrubUserCleared,300);}); window.addEventListener('load',function(){setTimeout(scrubUserCleared,500);});
 })();
 </script>
