@@ -43,7 +43,7 @@ async function handlePost(context) {
       try {
         const ph = await makePasswordHash(adminPass);
         await env.DB.prepare(`INSERT INTO users(username, display_name, role, password_hash, password_salt, password_plain, is_active, view_pages, edit_pages, created_by, created_at, updated_at)
-          VALUES(?,?,?,?,?,NULL,1,?,?, 'system',datetime('now'),datetime('now'))`)
+          VALUES(?,?,?,?,?,'',1,?,?, 'system',datetime('now'),datetime('now'))`)
           .bind(adminUser, user.display_name, 'admin', ph.hash, ph.salt, JSON.stringify(perms.view_pages), JSON.stringify(perms.edit_pages)).run();
       } catch (_) {}
     }

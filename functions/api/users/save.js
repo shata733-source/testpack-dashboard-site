@@ -30,7 +30,7 @@ async function handlePost(context) {
   if (existing) {
     if (password) {
       const ph = await makePasswordHash(password);
-      await context.env.DB.prepare(`UPDATE users SET display_name=?, role=?, is_active=?, view_pages=?, edit_pages=?, password_hash=?, password_salt=?, password_plain=NULL, updated_at=datetime('now') WHERE username=?`)
+      await context.env.DB.prepare(`UPDATE users SET display_name=?, role=?, is_active=?, view_pages=?, edit_pages=?, password_hash=?, password_salt=?, password_plain='', updated_at=datetime('now') WHERE username=?`)
         .bind(displayName, role, isActive, viewJson, editJson, ph.hash, ph.salt, username).run();
     } else {
       await context.env.DB.prepare(`UPDATE users SET display_name=?, role=?, is_active=?, view_pages=?, edit_pages=?, updated_at=datetime('now') WHERE username=?`)
@@ -40,8 +40,8 @@ async function handlePost(context) {
   } else {
     const ph = await makePasswordHash(password);
     await context.env.DB.prepare(`INSERT INTO users(username, display_name, role, password_hash, password_salt, password_plain, is_active, view_pages, edit_pages, created_by, created_at, updated_at)
-      VALUES(?,?,?,?,?,NULL,?,?,?,?,datetime('now'),datetime('now'))`)
-      .bind(username, displayName, role, ph.hash, ph.salt, isActive, viewJson, editJson, auth.user.username || auth.user.sub || '').run();
+      VALUES(?,?,?,?,?,?,?,?,?,?,datetime('now'),datetime('now'))`)
+      .bind(username, displayName, role, ph.hash, ph.salt, '', isActive, viewJson, editJson, auth.user.username || auth.user.sub || '').run();
     await audit(context.env, 'USER_CREATED', auth.user, { username, displayName, role, isActive, view_pages: perms.view_pages, edit_pages: perms.edit_pages }, { ip: getClientIP(context.request) });
   }
   return json({ ok:true, view_pages: perms.view_pages, edit_pages: perms.edit_pages });

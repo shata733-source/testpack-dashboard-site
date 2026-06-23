@@ -262,9 +262,9 @@ export async function ensureBuiltInAdmin(env, username, displayName = 'Mohamed S
     await env.DB.prepare(`UPDATE users SET display_name=COALESCE(NULLIF(display_name,''),?), role='admin', is_active=1, view_pages=?, edit_pages=?, updated_at=datetime('now') WHERE username=?`)
       .bind(displayName, JSON.stringify(perms.view_pages), JSON.stringify(perms.edit_pages), uname).run().catch(() => null);
   } else {
-    await env.DB.prepare(`INSERT INTO users(username, display_name, role, is_active, view_pages, edit_pages, created_by, created_at, updated_at)
-      VALUES(?,?,?,?,?,?,'system',datetime('now'),datetime('now'))`)
-      .bind(uname, displayName, 'admin', 1, JSON.stringify(perms.view_pages), JSON.stringify(perms.edit_pages)).run().catch(() => null);
+    await env.DB.prepare(`INSERT INTO users(username, display_name, role, password_plain, is_active, view_pages, edit_pages, created_by, created_at, updated_at)
+      VALUES(?,?,?,?,?,?,?,'system',datetime('now'),datetime('now'))`)
+      .bind(uname, displayName, 'admin', '', 1, JSON.stringify(perms.view_pages), JSON.stringify(perms.edit_pages)).run().catch(() => null);
   }
   return userForClient({ username: uname, display_name: displayName, role: 'admin', is_active: 1, view_pages: perms.view_pages, edit_pages: perms.edit_pages });
 }

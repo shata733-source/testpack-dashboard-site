@@ -29,7 +29,7 @@ export async function onRequestPost(context) {
       return json({ ok:false, error:'Current password is incorrect' }, 400);
     }
     const ph = await makePasswordHash(newPassword);
-    await context.env.DB.prepare(`UPDATE users SET display_name=?, password_hash=?, password_salt=?, password_plain=NULL, updated_at=datetime('now') WHERE username=?`)
+    await context.env.DB.prepare(`UPDATE users SET display_name=?, password_hash=?, password_salt=?, password_plain='', updated_at=datetime('now') WHERE username=?`)
       .bind(displayName, ph.hash, ph.salt, username).run();
     await audit(context.env, 'PROFILE_PASSWORD_CHANGED', auth.user, { username, displayName }, { ip: getClientIP(context.request) });
   } else {
