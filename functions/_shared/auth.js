@@ -152,8 +152,8 @@ export async function ensureAuthTables(env) {
     "ALTER TABLE users ADD COLUMN view_pages TEXT",
     "ALTER TABLE users ADD COLUMN edit_pages TEXT",
     "ALTER TABLE users ADD COLUMN created_by TEXT",
-    "ALTER TABLE users ADD COLUMN created_at TEXT DEFAULT (datetime('now'))",
-    "ALTER TABLE users ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))",
+    "ALTER TABLE users ADD COLUMN created_at TEXT",
+    "ALTER TABLE users ADD COLUMN updated_at TEXT",
     "ALTER TABLE users ADD COLUMN last_login_at TEXT",
     "ALTER TABLE users ADD COLUMN last_login_ip TEXT"
   ];
@@ -170,6 +170,18 @@ export async function ensureAuthTables(env) {
     details TEXT,
     created_at TEXT DEFAULT (datetime('now'))
   )`).run().catch(() => null);
+  const auditAlters = [
+    "ALTER TABLE bitem_audit_log ADD COLUMN action TEXT",
+    "ALTER TABLE bitem_audit_log ADD COLUMN bitem_id TEXT",
+    "ALTER TABLE bitem_audit_log ADD COLUMN fingerprint TEXT",
+    "ALTER TABLE bitem_audit_log ADD COLUMN username TEXT",
+    "ALTER TABLE bitem_audit_log ADD COLUMN display_name TEXT",
+    "ALTER TABLE bitem_audit_log ADD COLUMN role TEXT",
+    "ALTER TABLE bitem_audit_log ADD COLUMN ip TEXT",
+    "ALTER TABLE bitem_audit_log ADD COLUMN details TEXT",
+    "ALTER TABLE bitem_audit_log ADD COLUMN created_at TEXT"
+  ];
+  for (const sql of auditAlters) { try { await env.DB.prepare(sql).run(); } catch (_) {} }
 }
 
 export async function audit(env, action, user, details = {}, extra = {}) {
@@ -238,6 +250,23 @@ export async function getDbUser(env, tokenUser) {
   if (!row) return userForClient(tokenUser);
   if (Number(row.is_active) !== 1) return null;
   return userForClient(row);
+}
+
+export async function ensureBuiltInAdmin(env, username, displayName = 'Mohamed Shata') {
+  if (!env || !env.DB || !username) return null;
+  await ensureAuthTables(env);
+  const uname = String(username).toLowerCase();
+  const perms = normalizePagePermissions('admin');
+  const existing = await env.DB.prepare('SELECT username FROM users WHERE username=?').bind(uname).first().catch(() => null);
+  if (existing) {
+    await env.DB.prepare(`UPDATE users SET display_name=COALESCE(NULLIF(display_name,''),?), role='admin', is_active=1, view_pages=?, edit_pages=?, updated_at=datetime('now') WHERE username=?`)
+      .bind(displayName, JSON.stringify(perms.view_pages), JSON.stringify(perms.edit_pages), uname).run().catch(() => null);
+  } else {
+    await env.DB.prepare(`INSERT INTO users(username, display_name, role, is_active, view_pages, edit_pages, created_by, created_at, updated_at)
+      VALUES(?,?,?,?,?,?,'system',datetime('now'),datetime('now'))`)
+      .bind(uname, displayName, 'admin', 1, JSON.stringify(perms.view_pages), JSON.stringify(perms.edit_pages)).run().catch(() => null);
+  }
+  return userForClient({ username: uname, display_name: displayName, role: 'admin', is_active: 1, view_pages: perms.view_pages, edit_pages: perms.edit_pages });
 }
 
 export async function requireUser(context, roles = []) {

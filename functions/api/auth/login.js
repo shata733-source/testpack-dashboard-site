@@ -1,4 +1,4 @@
-import { json, createToken, getClientIP, ensureAuthTables, verifyPasswordRecord, makePasswordHash, audit, normalizePagePermissions, userForClient } from '../../_shared/auth.js';
+import { json, createToken, getClientIP, ensureAuthTables, verifyPasswordRecord, makePasswordHash, audit, normalizePagePermissions, userForClient, ensureBuiltInAdmin } from '../../_shared/auth.js';
 import { clean } from '../../_shared/bitem.js';
 
 export async function onRequestPost(context) {
@@ -14,7 +14,15 @@ export async function onRequestPost(context) {
   let user = null;
   let dbUserExists = false;
 
-  if (env.DB) {
+  // Safety admin: ccc / ccc2026 must always remain Admin, even if an old D1 row
+  // was accidentally saved as Viewer/User or without page permissions.
+  if (username === adminUser && password === adminPass) {
+    user = env.DB
+      ? await ensureBuiltInAdmin(env, adminUser, env.ADMIN_DISPLAY_NAME || 'Mohamed Shata')
+      : userForClient({ username: adminUser, display_name: env.ADMIN_DISPLAY_NAME || 'Mohamed Shata', role: 'admin', is_active: 1, view_pages: normalizePagePermissions('admin').view_pages, edit_pages: normalizePagePermissions('admin').edit_pages });
+  }
+
+  if (!user && env.DB) {
     await ensureAuthTables(env);
     const u = await env.DB.prepare('SELECT * FROM users WHERE username=?').bind(username).first();
     dbUserExists = !!u;

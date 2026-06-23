@@ -1,5 +1,7 @@
 import { json, requirePagePermission, ensureAuthTables, audit, getClientIP } from '../../_shared/auth.js';
-import { assertDB, clean } from '../../_shared/bitem.js';
+
+function clean(v) { return v === null || v === undefined ? '' : String(v).replace(/\s+/g, ' ').trim(); }
+function assertDB(env) { return env && env.DB ? null : json({ ok:false, error:'D1 binding DB is not configured.' }, 500); }
 
 export async function onRequestPost(context) {
   const dbError = assertDB(context.env); if (dbError) return dbError;
