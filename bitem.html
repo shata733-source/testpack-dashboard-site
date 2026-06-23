@@ -8536,89 +8536,144 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 })();
 </script>
 
-<!-- === V14 SINGLE ROW EDIT LOCK: edit only from selected Edit button, direct cell clicks disabled === -->
-<script id="v14-single-row-edit-lock">
+<!-- === V15 BITEM DATE PICKER STABILITY FIX === -->
+<style id="v15-bitem-date-picker-fix-css">
+  #bItemControlPage .bitem-cleared-cell{cursor:default!important;}
+  #bItemControlPage .bitem-cleared-cell .bitem-inline-edit{overflow:visible!important;position:relative;z-index:50;}
+  #bItemControlPage .bitem-inline-input{min-width:138px!important;}
+  #bItemControlPage .bitem-date-open-btn{height:30px;min-width:32px;border-radius:7px;border:1px solid rgba(0,212,255,.35);background:rgba(0,212,255,.08);color:var(--accent);font-weight:900;cursor:pointer;}
+  #bItemControlPage .bitem-date-open-btn:hover{background:rgba(0,212,255,.16)}
+</style>
+<script id="v15-bitem-date-picker-fix-js">
 (function(){
-  if(window.__V14_SINGLE_ROW_EDIT_LOCK__) return; window.__V14_SINGLE_ROW_EDIT_LOCK__ = true;
-  function clean(v){ return v==null ? '' : String(v).replace(/\s+/g,' ').trim(); }
-  function dec(v){ try { return decodeURIComponent(String(v||'')); } catch(e){ return String(v||''); } }
-  function esc(v){ return String(v==null?'':v).replace(/[&<>\"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
-  function cssEsc(v){ if(window.CSS && CSS.escape) return CSS.escape(String(v||'')); return String(v||'').replace(/[^a-zA-Z0-9_-]/g,'\\$&'); }
+  if(window.__V15_BITEM_DATE_PICKER_FIX__) return;
+  window.__V15_BITEM_DATE_PICKER_FIX__ = true;
+
+  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
+  function dec(v){try{return decodeURIComponent(String(v||''));}catch(e){return String(v||'');}}
+  function esc(v){return String(v??'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
   function toIsoDate(v){
-    v=clean(v); if(!v) return '';
-    var m=v.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if(m) return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
-    m=v.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/); if(m) return m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
-    var d=new Date(v); if(!isNaN(d)) return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    return '';
+    var s=clean(v); if(!s) return '';
+    var m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if(m) return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+    m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/);
+    if(m){var y=m[3].length===2?'20'+m[3]:m[3];return y+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');}
+    var d=new Date(s); return isNaN(d.getTime()) ? '' : d.toISOString().slice(0,10);
   }
-  function isoToDisplay(v){ v=clean(v); if(!v) return ''; var iso=toIsoDate(v); if(!iso) return v; var p=iso.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
-  function token(){ try { return localStorage.getItem('ccc_bitem_auth_token') || ''; } catch(e){ return ''; } }
-  async function saveEdit(id, fp, iso){
-    var headers={'content-type':'application/json'}; var t=token(); if(t) headers.authorization='Bearer '+t;
-    var res=await fetch('/api/bitem/edit',{method:'POST',headers:headers,body:JSON.stringify({bitem_id:id,fingerprint:fp,punch_cleared:iso,remarks:'Inline User Cleared update'})});
-    var txt=await res.text(); var data={}; try{data=JSON.parse(txt);}catch(e){throw new Error('Bad JSON response');}
-    if(!res.ok || data.ok===false) throw new Error(data.error || ('HTTP '+res.status));
+  function isoToDisplay(iso){
+    iso=clean(iso); var m=iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? (m[3]+'/'+m[2]+'/'+m[1]) : iso;
+  }
+  function authHeaders(){
+    var h={'content-type':'application/json'};
+    try{var t=localStorage.getItem('ccc_bitem_auth_token')||''; if(t) h.authorization='Bearer '+t;}catch(e){}
+    return h;
+  }
+  async function apiPost(path,payload){
+    var res=await fetch(path,{method:'POST',headers:authHeaders(),body:JSON.stringify(payload||{}),cache:'no-store'});
+    var txt=await res.text(); var data={};
+    try{data=txt?JSON.parse(txt):{};}catch(e){throw new Error((txt||'Bad JSON response').slice(0,220));}
+    if(!res.ok || data.ok===false) throw new Error(data.error||('HTTP '+res.status));
     return data;
   }
-  function restoreCell(cell){
-    if(!cell) return;
-    cell.classList.remove('bitem-cell-editing');
-    if(cell.hasAttribute('data-v14-old-html')) cell.innerHTML = cell.getAttribute('data-v14-old-html') || '';
-    else cell.textContent = cell.getAttribute('data-v14-old-text') || '';
-    cell.removeAttribute('data-v14-old-html'); cell.removeAttribute('data-v14-old-text'); cell.removeAttribute('data-v14-editing');
+  function currentActionRow(){
+    var ae=document.activeElement;
+    var btn=ae && ae.closest ? ae.closest('.bitem-edit-btn') : null;
+    return btn && btn.closest ? btn.closest('tr') : null;
   }
-  function closeEditors(except){
-    document.querySelectorAll('td.bitem-cell-editing').forEach(function(cell){ if(cell!==except) restoreCell(cell); });
+  function findTargetCell(id){
+    var row=currentActionRow();
+    if(row){var c=row.querySelector('[data-bitem-system-cleared]'); if(c) return c;}
+    var cells=Array.from(document.querySelectorAll('#bItemControlPage [data-bitem-system-cleared]'));
+    return cells.find(function(c){return clean(c.getAttribute('data-bitem-system-cleared'))===clean(id);}) || null;
   }
-  function activeEditButtonRow(){
-    var el=document.activeElement;
-    if(el && el.closest){ var btn=el.closest('.bitem-edit-btn'); if(btn) return btn.closest('tr'); }
-    return null;
+  function stripDateCellClickHandlers(){
+    document.querySelectorAll('#bItemControlPage .bitem-cleared-cell[data-bitem-system-cleared]').forEach(function(td){
+      td.removeAttribute('onclick');
+      td.onclick=null;
+      td.title='Use the Edit button in the same row to change this date';
+    });
   }
-
-  // Important: direct clicks on date cells must not start edit mode. Only the selected row Edit button starts editing.
-  document.addEventListener('click', function(e){
-    var cell=e.target && e.target.closest ? e.target.closest('.bitem-cleared-cell') : null;
+  function openNativePicker(inp){
+    if(!inp) return;
+    try{inp.focus({preventScroll:true});}catch(e){try{inp.focus();}catch(x){}}
+    try{ if(inp.showPicker) inp.showPicker(); }catch(e){}
+  }
+  function makeStableEditor(cell,id,fp,oldVal){
     if(!cell) return;
-    if(e.target.closest('.bitem-inline-edit')) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if(e.stopImmediatePropagation) e.stopImmediatePropagation();
-    return false;
-  }, true);
-
-  window.bitemStartSystemClearedEdit=function(eid, efp, eold){
-    if(window.__CCC_VIEW_ONLY__){ alert('View only account. Editing is disabled for this user.'); return; }
-    var id=dec(eid), fp=dec(efp), oldVal=dec(eold);
-    var row=activeEditButtonRow();
-    var cell=row ? row.querySelector('.bitem-cleared-cell') : null;
-    if(!cell) cell=document.querySelector('[data-bitem-system-cleared="'+cssEsc(id)+'"]');
-    if(!cell) return;
-    closeEditors(cell);
-    cell.setAttribute('data-v14-old-html', cell.innerHTML);
-    cell.setAttribute('data-v14-old-text', clean(cell.textContent));
-    cell.setAttribute('data-v14-editing','1');
+    window.__BITEM_INLINE_EDIT_LOCK = true;
+    stripDateCellClickHandlers();
+    document.querySelectorAll('#bItemControlPage .bitem-cell-editing').forEach(function(td){
+      if(td!==cell){ td.classList.remove('bitem-cell-editing'); }
+    });
+    var oldDisplay=clean(cell.textContent)||isoToDisplay(toIsoDate(oldVal));
+    var oldIso=toIsoDate(oldVal||oldDisplay);
     cell.classList.add('bitem-cell-editing');
-    var iso=toIsoDate(oldVal || cell.textContent);
-    cell.innerHTML='<div class="bitem-inline-edit"><input class="bitem-inline-input" type="date" value="'+esc(iso)+'"><button class="bitem-save-btn" type="button" title="Save">✓</button><button class="bitem-cancel-btn" type="button" title="Cancel">×</button></div>';
-    var inp=cell.querySelector('input'); var save=cell.querySelector('.bitem-save-btn'); var cancel=cell.querySelector('.bitem-cancel-btn');
-    if(cancel) cancel.onclick=function(ev){ if(ev){ev.preventDefault(); ev.stopPropagation();} restoreCell(cell); };
+    cell.innerHTML='<div class="bitem-inline-edit" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()">'+
+      '<input class="bitem-inline-input" type="date" value="'+esc(oldIso)+'" title="Select punch cleared date">'+
+      '<button class="bitem-date-open-btn" type="button" title="Open calendar">📅</button>'+
+      '<button class="bitem-save-btn" type="button" title="Save">✓</button>'+
+      '<button class="bitem-cancel-btn" type="button" title="Cancel">×</button>'+
+      '</div>';
+    var inp=cell.querySelector('.bitem-inline-input');
+    var cal=cell.querySelector('.bitem-date-open-btn');
+    var save=cell.querySelector('.bitem-save-btn');
+    var cancel=cell.querySelector('.bitem-cancel-btn');
+    [inp,cal,save,cancel].forEach(function(el){
+      if(!el) return;
+      el.addEventListener('click',function(ev){ev.stopPropagation();});
+      el.addEventListener('mousedown',function(ev){ev.stopPropagation();});
+      el.addEventListener('pointerdown',function(ev){ev.stopPropagation();});
+    });
+    if(inp){try{inp.focus({preventScroll:true});}catch(e){}}
+    if(cal) cal.onclick=function(ev){ev.stopPropagation();openNativePicker(inp);};
+    if(cancel) cancel.onclick=function(ev){
+      ev.stopPropagation();
+      window.__BITEM_INLINE_EDIT_LOCK = false;
+      cell.classList.remove('bitem-cell-editing');
+      cell.innerHTML=esc(oldDisplay);
+      stripDateCellClickHandlers();
+    };
     if(save) save.onclick=async function(ev){
-      if(ev){ev.preventDefault(); ev.stopPropagation();}
-      var newIso=(inp && inp.value) || '';
-      save.disabled=true;
+      ev.stopPropagation();
+      var iso=(inp&&inp.value)||'';
       try{
-        await saveEdit(id, fp, newIso);
+        save.disabled=true; save.textContent='…';
+        await apiPost('/api/bitem/edit',{bitem_id:id,fingerprint:fp,punch_cleared:iso,remarks:'Inline Punch Cleared update'});
+        window.__BITEM_INLINE_EDIT_LOCK = false;
         cell.classList.remove('bitem-cell-editing');
-        cell.innerHTML=esc(isoToDisplay(newIso));
-        cell.removeAttribute('data-v14-old-html'); cell.removeAttribute('data-v14-old-text'); cell.removeAttribute('data-v14-editing');
-        if(typeof window.bitemLoadSystemState==='function') window.bitemLoadSystemState(true).catch(function(){});
-      }catch(err){
-        alert('Save failed: '+(err && err.message ? err.message : err));
-        save.disabled=false;
+        cell.innerHTML=esc(isoToDisplay(iso));
+        try{ if(typeof window.bitemLoadSystemState==='function') await window.bitemLoadSystemState(true); }catch(e){}
+        if(typeof window.renderBItemControl==='function') window.renderBItemControl(false);
+      }catch(e){
+        save.disabled=false; save.textContent='✓';
+        alert('Save failed: '+(e&&e.message?e.message:e));
       }
     };
-    if(inp){ setTimeout(function(){ try{ inp.focus(); if(inp.showPicker) inp.showPicker(); }catch(e){} },30); }
+  }
+
+  window.bitemStartSystemClearedEdit=function(eid,efp,eold){
+    if(window.__CCC_VIEW_ONLY__){alert('View only account. Editing is disabled for this user.');return;}
+    var id=dec(eid), fp=dec(efp), oldVal=dec(eold);
+    var cell=findTargetCell(id);
+    if(!cell){alert('Could not find the selected row date cell. Please reload B Item and try again.');return;}
+    makeStableEditor(cell,id,fp,oldVal);
   };
+
+  var realRender=window.renderBItemControl;
+  if(typeof realRender==='function' && !realRender.__v15Wrapped){
+    var wrapped=function(){
+      if(window.__BITEM_INLINE_EDIT_LOCK) return;
+      var out=realRender.apply(this,arguments);
+      setTimeout(stripDateCellClickHandlers,0);
+      return out;
+    };
+    wrapped.__v15Wrapped=true;
+    window.renderBItemControl=wrapped;
+    try{renderBItemControl=wrapped;}catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(stripDateCellClickHandlers,50);setTimeout(stripDateCellClickHandlers,800);});
+  window.addEventListener('load',function(){setTimeout(stripDateCellClickHandlers,100);setTimeout(stripDateCellClickHandlers,1200);});
+  setInterval(stripDateCellClickHandlers,2000);
 })();
 </script>
