@@ -8527,3 +8527,114 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   setInterval(hardRoute,2500);
 })();
 </script>
+
+<script>
+/* === V29 Dashboard B Item Registry Source ===
+   Purpose: make B Item Control / D1 bitem_registry the single source for Punch B dashboard counts.
+   - Save/Clear in B Item updates final_status in D1.
+   - Dashboard reads /api/bitem/kpi, so Punch B Balance responds without using embedded old Excel B Item rows.
+   - Contractor filter uses the final CCC/JGC area rule from the backend endpoint.
+*/
+(function(){
+  if (window.__V29_DASH_BITEM_REGISTRY__) return;
+  window.__V29_DASH_BITEM_REGISTRY__ = true;
+
+  function safeText(v){ return String(v == null ? '' : v); }
+  function filterList(v){
+    if (Array.isArray(v)) return v.filter(Boolean).filter(x => String(x).toUpperCase() !== 'ALL');
+    if (!v || String(v).toUpperCase() === 'ALL') return [];
+    return [v];
+  }
+  function currentContractor(){
+    try {
+      var c = (window.F && window.F.con) ? String(window.F.con) : 'ALL';
+      if (!c || c.toUpperCase() === 'ALL') return 'ALL';
+      if (/JGC/i.test(c)) return 'JGC Direct MP';
+      if (/CCC/i.test(c)) return 'CCC';
+      return c;
+    } catch(e){ return 'ALL'; }
+  }
+  function tokenHeaders(){
+    var h = { 'Accept': 'application/json' };
+    try {
+      var t = localStorage.getItem('ccc_bitem_auth_token') || localStorage.getItem('ccc_auth_token') || '';
+      if (t) h.Authorization = 'Bearer ' + t;
+    } catch(e) {}
+    return h;
+  }
+  function dashboardBitemParams(){
+    var p = new URLSearchParams();
+    p.set('contractor', currentContractor());
+    try {
+      var areas = filterList(window.F && window.F.area);
+      var stages = filterList(window.F && window.F.stage);
+      if (areas.length) p.set('area', areas.join(','));
+      if (stages.length) p.set('stage', stages.join(','));
+    } catch(e) {}
+    p.set('_', String(Date.now()));
+    return p;
+  }
+  function punchBoxHtml(obj){
+    var total = Number(obj && obj.total || 0);
+    var cleared = Number(obj && obj.cleared || 0);
+    var balance = Number(obj && obj.balance || Math.max(total-cleared,0));
+    var pc = total > 0 ? Math.round(cleared / total * 100) : 0;
+    var fmt = function(v){ return Number(v || 0).toLocaleString(); };
+    return '<div class="punch-box" data-bitem-registry="1">' +
+      '<div class="punch-cat">Punch B</div>' +
+      '<div class="punch-total" style="color:var(--orange)">'+fmt(total)+'</div>' +
+      '<div class="punch-sub">Cleared: '+fmt(cleared)+'</div>' +
+      '<div class="punch-sub" style="color:var(--red)">Balance: '+fmt(balance)+'</div>' +
+      '<div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:var(--orange)"></div></div>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared · source: B Item Control</div>' +
+    '</div>';
+  }
+  function replacePunchBCard(kpi){
+    var box = document.getElementById('punchCards');
+    if (!box || !kpi || !kpi.ok) return;
+    var cards = Array.prototype.slice.call(box.children || []);
+    if (cards.length >= 2) cards[1].outerHTML = punchBoxHtml(kpi.punchB || kpi);
+  }
+  var seq = 0;
+  async function refreshDashboardBItemKpi(){
+    var my = ++seq;
+    try {
+      var res = await fetch('/api/bitem/kpi?' + dashboardBitemParams().toString(), { headers: tokenHeaders(), cache: 'no-store' });
+      var text = await res.text();
+      var data = null;
+      try { data = JSON.parse(text); } catch(e) { console.warn('B Item KPI returned non-JSON:', text.slice(0,160)); return; }
+      if (my !== seq) return;
+      if (data && data.ok) replacePunchBCard(data);
+    } catch(e) { console.warn('Could not refresh dashboard B Item KPI:', e && e.message || e); }
+  }
+  window.refreshDashboardBItemKpi = refreshDashboardBItemKpi;
+
+  function patchRenderOverview(){
+    if (typeof window.renderOverview === 'function' && !window.renderOverview.__bitemRegistryPatched) {
+      var old = window.renderOverview;
+      window.renderOverview = function(data){
+        var out = old.apply(this, arguments);
+        setTimeout(refreshDashboardBItemKpi, 0);
+        return out;
+      };
+      window.renderOverview.__bitemRegistryPatched = true;
+      try { renderOverview = window.renderOverview; } catch(e) {}
+    }
+  }
+  function patchRefresh(){
+    if (typeof window.refresh === 'function' && !window.refresh.__bitemRegistryPatched) {
+      var old = window.refresh;
+      window.refresh = function(){
+        var out = old.apply(this, arguments);
+        setTimeout(refreshDashboardBItemKpi, 250);
+        return out;
+      };
+      window.refresh.__bitemRegistryPatched = true;
+      try { refresh = window.refresh; } catch(e) {}
+    }
+  }
+  function boot(){ patchRenderOverview(); patchRefresh(); setTimeout(refreshDashboardBItemKpi,500); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+  window.addEventListener('focus', function(){ setTimeout(refreshDashboardBItemKpi, 200); });
+})();
+</script>
