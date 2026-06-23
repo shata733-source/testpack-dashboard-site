@@ -1,8 +1,5 @@
 <!DOCTYPE html>
 <html lang="en"><head>
-<script id="mp-v5-boot-hide">document.documentElement.classList.add('mp-v5-booting');</script>
-<style id="mp-v5-boot-hide-css">html.mp-v5-booting body{visibility:hidden!important}</style>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Test Pack Dashboard — CCC | B Item Tracking Preview</title>
@@ -8422,9 +8419,9 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   function q(s,r){return (r||document).querySelector(s)}
   function qa(s,r){return Array.from((r||document).querySelectorAll(s))}
   function path(){return String(location.pathname||'').toLowerCase()}
-  function isBitemPage(){return path().endsWith('/bitem.html') || path().includes('bitem.html')}
-  function isMonitorPage(){return path().includes('bitem-monitoring')}
-  function isDashPage(){return path().includes('dashboard') && !isBitemPage() && !isMonitorPage()}
+  function isBitemPage(){var p=path().replace(/\/+$/,'');return p.endsWith('/bitem') || p.endsWith('/bitem.html') || p.includes('bitem.html')}
+  function isMonitorPage(){var p=path().replace(/\/+$/,'');return p.endsWith('/bitem-monitoring') || p.endsWith('/bitem-monitoring.html') || p.includes('bitem-monitoring')}
+  function isDashPage(){var p=path().replace(/\/+$/,'');return (p.endsWith('/dashboard') || p.endsWith('/dashboard.html') || p.includes('dashboard')) && !isBitemPage() && !isMonitorPage()}
   function goHome(){ location.href='/projects.html'; }
   window.mpGoHome = goHome;
 
@@ -8489,13 +8486,13 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   function hardRoute(){
     addHeaderHome(); disableOldMenus(); cleanBitemTools();
     if(isMonitorPage()){
-      if(location.hash !== '#/monitoring') { try{ history.replaceState({route:'monitoring',mode:'employer'},'', '/bitem-monitoring.html#/monitoring'); }catch(e){} }
+      if(location.hash !== '#/monitoring') { try{ history.replaceState({route:'monitoring',mode:'employer'},'', '/bitem-monitoring#/monitoring'); }catch(e){} }
       ensureMonitoringPageThenShow();
     } else if(isBitemPage()){
-      if(location.hash !== '#/bitem') { try{ history.replaceState({route:'bitem',mode:'employer'},'', '/bitem.html#/bitem'); }catch(e){} }
+      if(location.hash !== '#/bitem') { try{ history.replaceState({route:'bitem',mode:'employer'},'', '/bitem#/bitem'); }catch(e){} }
       ensureBitemThenShow();
     } else if(isDashPage()){
-      if(location.hash !== '#/dashboard') { try{ history.replaceState({route:'dashboard',mode:'employer'},'', '/dashboard.html#/dashboard'); }catch(e){} }
+      if(location.hash !== '#/dashboard') { try{ history.replaceState({route:'dashboard',mode:'employer'},'', '/dashboard#/dashboard'); }catch(e){} }
       ensureDashboardThenShow();
     }
   }
