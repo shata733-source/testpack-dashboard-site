@@ -8377,7 +8377,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     rows.sort((a,b)=>tpOfRow(a).localeCompare(tpOfRow(b),undefined,{numeric:true})||displayId(a).localeCompare(displayId(b),undefined,{numeric:true}));
     const sel=document.getElementById('bItemControlPageSize'); const size=Math.max(25,Number(sel&&sel.value)||100); const pages=Math.max(1,Math.ceil(rows.length/size)); if(window.__V21_BITEM_PAGE>pages)window.__V21_BITEM_PAGE=pages; const start=(window.__V21_BITEM_PAGE-1)*size; const page=rows.slice(start,start+size);
     body.innerHTML=page.map(r=>{const id=actualId(r), fp=fingerprint(r), old=finalDate(r), note=v24Note(r); const eid=encodeURIComponent(id), efp=encodeURIComponent(fp), eold=encodeURIComponent(old); const btn=`<button class="bitem-edit-btn" type="button" onclick="window.bitemStartSystemClearedEdit&&window.bitemStartSystemClearedEdit('${eid}','${efp}','${eold}')">✏️ Edit</button>`; return `<tr>
-      <td class="bitem-action-col">${btn}</td><td class="bitem-id-col" title="Actual ID: ${esc(id)}">${esc(displayId(r))}</td><td>${esc(tpOfRow(r))}</td><td>${esc(stageOfRow(r))}</td><td>${esc(dateOfRow(r))}</td><td>${esc(areaOfRow(r))}</td><td>${esc(isoOfRow(r))}</td><td>${esc(sheetOfRow(r))}</td><td>${esc(punchCatOfRow(r)||'B')}</td><td>${esc(matOfRow(r))}</td><td class="bitem-comment-cell" title="${esc(commentOfRow(r))}">${esc(commentOfRow(r))}</td><td class="bitem-status-col">${v24StatusPill(queryStatus(r))}</td><td class="bitem-status-col">${v24StatusPill(finalStatus(r))}</td><td class="bitem-cleared-cell bitem-cleared-col" data-bitem-system-cleared="${esc(id)}" onclick="window.bitemStartSystemClearedEdit&&window.bitemStartSystemClearedEdit('${eid}','${efp}','${eold}')">${esc(finalDate(r))}</td><td class="bitem-cleared-col">${esc(v24UserCleared(r))}</td><td class="bitem-note-cell bitem-note-col" title="${esc(note)}">${esc(note)}</td><td>${esc(reinstContractorOfTp(tpOfRow(r)))}</td>
+      <td class="bitem-action-col">${btn}</td><td class="bitem-id-col" title="Actual ID: ${esc(id)}">${esc(displayId(r))}</td><td>${esc(tpOfRow(r))}</td><td>${esc(stageOfRow(r))}</td><td>${esc(dateOfRow(r))}</td><td>${esc(areaOfRow(r))}</td><td>${esc(isoOfRow(r))}</td><td>${esc(sheetOfRow(r))}</td><td>${esc(punchCatOfRow(r)||'B')}</td><td>${esc(matOfRow(r))}</td><td class="bitem-comment-cell" title="${esc(commentOfRow(r))}">${esc(commentOfRow(r))}</td><td class="bitem-status-col">${v24StatusPill(queryStatus(r))}</td><td class="bitem-status-col">${v24StatusPill(finalStatus(r))}</td><td class="bitem-cleared-cell bitem-cleared-col" data-bitem-system-cleared="${esc(id)}">${esc(finalDate(r))}</td><td class="bitem-cleared-col">${esc(v24UserCleared(r))}</td><td class="bitem-note-cell bitem-note-col" title="${esc(note)}">${esc(note)}</td><td>${esc(reinstContractorOfTp(tpOfRow(r)))}</td>
     </tr>`;}).join('') || '<tr><td colspan="17" class="stage-note">No B Item rows for current filters.</td></tr>';
     if(info)info.textContent=`Page ${window.__V21_BITEM_PAGE} / ${pages}`;
     if(count)count.textContent=`B Item Rows: ${rows.length.toLocaleString()}`;
@@ -8408,31 +8408,37 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 <style id="v7-role-guard-css">body.ccc-viewer-mode .bitem-edit-btn{opacity:.45!important;pointer-events:none!important;filter:grayscale(1)}body.ccc-viewer-mode .bitem-cleared-cell{cursor:not-allowed!important}.ccc-auth-block{min-height:100vh;background:#06101c;color:#f4f7fb;font-family:Inter,Arial,sans-serif;display:flex;align-items:center;justify-content:center;padding:24px}.ccc-auth-card{max-width:520px;background:#0e1b2c;border:1px solid #203a5b;border-radius:18px;padding:28px;text-align:center}.ccc-auth-card a{display:inline-block;margin-top:12px;border:1px solid #00d4ff;color:#00d4ff;padding:10px 14px;border-radius:10px;text-decoration:none;font-weight:800}</style>
 <script id="v7-role-guard-bitem">
 (function(){
-  if(window.__V7_ROLE_GUARD_BITEM__)return; window.__V7_ROLE_GUARD_BITEM__=true;
-  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||'';}catch(e){return '';}}
+  if(window.__V17_SAFE_BITEM_ACCESS_GUARD__)return; window.__V17_SAFE_BITEM_ACCESS_GUARD__=true;
+  function clean(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
+  function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
+  function cachedUser(){try{return JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'null')||null;}catch(e){return null;}}
+  function saveUser(u){try{if(u){localStorage.setItem('ccc_bitem_auth_user',JSON.stringify(u));sessionStorage.setItem('ccc_bitem_auth_user_session',JSON.stringify(u));}}catch(e){}}
   function login(){location.href='/login.html?next='+encodeURIComponent(location.pathname+location.search+location.hash);}
   function block(msg){document.body.innerHTML='<div class="ccc-auth-block"><div class="ccc-auth-card"><h2>Unauthorized</h2><p>'+msg+'</p><a href="/projects.html">🏠 Home</a></div></div>';}
+  function arr(v){if(Array.isArray(v))return v.map(String);if(v==null)return [];try{var j=JSON.parse(String(v)); if(Array.isArray(j))return j.map(String);}catch(e){}return String(v).split(',').map(function(x){return x.trim();}).filter(Boolean);}
+  function roleOf(u){return String((u&&(u.role||u.role_name))||'viewer').toLowerCase();}
+  function defaultPerms(role){role=String(role||'viewer').toLowerCase();if(role==='admin')return {view:['dashboard','bitem','bitem-monitoring','users'],edit:['bitem','users']};if(role==='user')return {view:['bitem'],edit:['bitem']};return {view:['dashboard'],edit:[]};}
+  function perms(u){u=u||{}; var role=roleOf(u); if(role==='admin')return defaultPerms('admin');var def=defaultPerms(role);var view=(u.view_pages!==undefined&&u.view_pages!==null)?arr(u.view_pages):(u.permissions&&u.permissions.view!==undefined?arr(u.permissions.view):def.view);var edit=(u.edit_pages!==undefined&&u.edit_pages!==null)?arr(u.edit_pages):(u.permissions&&u.permissions.edit!==undefined?arr(u.permissions.edit):def.edit);if(role==='viewer')edit=[];edit.forEach(function(p){if(view.indexOf(p)<0)view.push(p);});return {view:view,edit:edit};}
+  function canView(u,page){if(roleOf(u)==='admin')return true; return perms(u).view.indexOf(page)>=0;}
+  function canEdit(u,page){if(roleOf(u)==='admin')return true; return perms(u).edit.indexOf(page)>=0;}
   function lockViewer(){
     document.body.classList.add('ccc-viewer-mode'); window.__CCC_VIEW_ONLY__=true;
     function noEdit(){alert('View only account. Editing is disabled for this user.');}
-    function wrap(){
-      ['bitemStartSystemClearedEdit','bitemStartRawClearedEdit','bitemPreviewEdit','bitemEdit'].forEach(function(n){
-        if(typeof window[n]==='function' && !window[n].__viewerLocked){var f=function(){noEdit();}; f.__viewerLocked=true; window[n]=f;}
-      });
-      document.querySelectorAll('.bitem-edit-btn').forEach(function(b){b.title='View only'; b.disabled=true;});
-    }
-    document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('.bitem-cleared-cell')){e.preventDefault();e.stopPropagation();noEdit();}},true);
+    function wrap(){['bitemStartSystemClearedEdit','bitemStartRawClearedEdit','bitemPreviewEdit','bitemEdit'].forEach(function(n){if(typeof window[n]==='function' && !window[n].__viewerLocked){var f=function(){noEdit();}; f.__viewerLocked=true; window[n]=f;}});document.querySelectorAll('.bitem-edit-btn').forEach(function(b){b.title='View only'; b.disabled=true;});}
+    document.addEventListener('click',function(e){if(e.target&&e.target.closest&&e.target.closest('.bitem-cleared-cell,.bitem-edit-btn')){e.preventDefault();e.stopPropagation();noEdit();}},true);
     setInterval(wrap,700); setTimeout(wrap,200); setTimeout(wrap,1500);
   }
+  function applyAccess(u){if(!u || !(u.username||u.sub)){return false;}var role=roleOf(u);if(['admin','user','viewer'].indexOf(role)<0){block('Your account does not have access to B Punch Edit.');return true;}if(!canView(u,'bitem')){block('B Punch Edit is not enabled for this account.');return true;}if(!canEdit(u,'bitem')) lockViewer();return true;}
   async function guard(){
-    var t=token(); if(!t){login();return;}
+    var t=token(); if(!t){login();return;} var local=cachedUser();
     try{
-      var res=await fetch('/api/auth/me',{cache:'no-store',headers:{authorization:'Bearer '+t}}); var d=await res.json().catch(function(){return {};});
-      if(!res.ok||!d.ok||!d.user){login();return;}
-      var role=(d.user.role||'').toLowerCase();
-      if(['admin','user','viewer'].indexOf(role)<0){block('Your account does not have access to B Punch Edit.');return;}
-      if(role==='viewer')lockViewer();
-    }catch(e){login();}
+      var res=await fetch('/api/auth/me',{cache:'no-store',headers:{authorization:'Bearer '+t}});
+      var txt=await res.text(); var d={};
+      try{d=txt?JSON.parse(txt):{};}catch(parseErr){console.warn('[V17] /api/auth/me returned non JSON. Keeping current session locally.', txt && txt.slice ? txt.slice(0,180) : txt);if(applyAccess(local))return;block('Session check returned a non-JSON response. Please reload the page or login again.');return;}
+      if(res.ok && d.ok && d.user){saveUser(d.user); applyAccess(d.user); return;}
+      if(local && (local.username||local.sub)){console.warn('[V17] /api/auth/me failed but local session exists. Keeping B Item page stable.', d.error||res.status);applyAccess(local); return;}
+      login();
+    }catch(e){console.warn('[V17] Auth check network error. Keeping local session if available.', e&&e.message?e.message:e);if(applyAccess(local))return;block('Session check failed. Please reload the page or login again.');}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',guard); else guard();
 })();
