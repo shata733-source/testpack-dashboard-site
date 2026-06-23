@@ -144,7 +144,7 @@ export async function onRequestGet(context) {
       balance:cns.balance+ret.balance,
       party_counts: objToItems(partyCounts),
       material_counts: objToItems(materialCounts).slice(0,30),
-      by_tp: Object.values(byTp).sort((a,b)=>b.balance-a.balance || b.retBalance-a.retBalance || b.total-a.total).slice(0,500)
+      by_tp: Object.values(byTp).sort((a,b)=>b.balance-a.balance || b.retBalance-a.retBalance || b.total-a.total)
     });
   } catch (e) {
     return json({ ok:false, source:'bitem_registry', error:(e && e.message) ? e.message : String(e || 'Unknown error') }, 500);
