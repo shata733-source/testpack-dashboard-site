@@ -9055,7 +9055,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 </script>
 
 <script>
-/* === V36 Stage Control D1 Stable Renderer ===
+/* === V38 Stage Control D1 Stable Renderer + Pending Table Only ===
    Stage Control B Punch values are now rendered from /api/bitem/stage-control only.
    This prevents older in-page renderers from repainting the D1 values back to zero.
 */
@@ -9152,8 +9152,77 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     if (party) party.innerHTML = miniBars(data.party_counts || [['CNS',0],['ENG',0]], 'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))');
     var mat = document.getElementById('bPunchMatChart');
     if (mat) mat.innerHTML = miniBars(data.material_counts || [], 'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))');
+    renderPendingFromD1(data);
     return true;
   }
+
+  function renderPendingFromD1(data){
+    var countEl = document.getElementById('reinstPendingCount');
+    var tableEl = document.getElementById('reinstPendingTable');
+    if (!countEl || !tableEl || !data || !data.ok) return;
+
+    function esc(v){
+      v = v == null ? '' : String(v);
+      return v.replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+    }
+
+    var stageByTp = {};
+    try {
+      var tpRows = (typeof getFiltered === 'function' ? getFiltered() : []) || [];
+      tpRows.forEach(function(r){
+        var tp = C(r && r.tp);
+        if (!tp) return;
+        var stg = '';
+        try { stg = typeof currentStageOfTp === 'function' ? currentStageOfTp(r) : ''; } catch(e) {}
+        stageByTp[U(tp)] = stg || 'Return for Reinstatement';
+      });
+    } catch(e) {}
+
+    var all = (data.by_tp || []).map(function(x){
+      var total = Number(x.total || 0), cleared = Number(x.cleared || 0);
+      var balance = Number.isFinite(Number(x.balance)) ? Number(x.balance) : Math.max(total - cleared, 0);
+      var retTotal = Number(x.retTotal || 0), retCleared = Number(x.retCleared || 0);
+      var retBalance = Number.isFinite(Number(x.retBalance)) ? Number(x.retBalance) : Math.max(retTotal - retCleared, 0);
+      return {
+        tp: C(x.tp),
+        current: stageByTp[U(x.tp)] || 'Return for Reinstatement',
+        total: total,
+        cleared: cleared,
+        balance: balance,
+        cns: Number(x.cns || 0),
+        eng: Number(x.eng || 0),
+        retTotal: retTotal,
+        retCleared: retCleared,
+        retBalance: retBalance
+      };
+    }).filter(function(r){ return r.tp && (r.total || r.retTotal || r.balance || r.retBalance); });
+
+    all.sort(function(a,b){ return (b.balance-a.balance) || (b.retBalance-a.retBalance) || (b.total-a.total) || a.tp.localeCompare(b.tp, undefined, {numeric:true}); });
+
+    var qEl = document.getElementById('reinstPendingSearch');
+    var q = U(qEl && qEl.value || '');
+    var rows = q ? all.filter(function(r){ return U(r.tp + ' ' + r.current + ' CNS ' + r.cns + ' ENG ' + r.eng).indexOf(q) >= 0; }) : all;
+
+    countEl.textContent = fmt(rows.length) + ' / ' + fmt(all.length) + ' Test Packs';
+    tableEl.innerHTML = rows.map(function(r){
+      var note = (r.total || 0) === 0
+        ? '<span style="color:var(--muted);font-weight:800">No CNS B Punch Received</span>'
+        : (r.balance === 0 ? '<span style="color:var(--green);font-weight:800">Ready from Construction</span>' : '<span style="color:var(--orange);font-weight:800">CNS Open</span>');
+      return '<tr data-v38-pending-d1="1">' +
+        '<td>'+esc(r.tp)+'</td>' +
+        '<td>'+esc(r.current)+'</td>' +
+        '<td>'+fmt(r.total)+'</td>' +
+        '<td><span style="color:var(--accent)">CNS '+fmt(r.cns)+'</span> / <span style="color:var(--accent2)">ENG '+fmt(r.eng)+'</span></td>' +
+        '<td>'+note+'</td>' +
+        '<td>'+fmt(r.cleared)+'</td>' +
+        '<td style="color:'+(r.balance>0?'var(--red)':'var(--green)')+'">'+fmt(r.balance)+'</td>' +
+        '<td>'+fmt(r.retTotal)+'</td>' +
+        '<td>'+fmt(r.retCleared)+'</td>' +
+        '<td style="color:'+(r.retBalance>0?'var(--red)':'var(--green)')+'">'+fmt(r.retBalance)+'</td>' +
+      '</tr>';
+    }).join('') || '<tr data-v38-pending-d1="1"><td colspan="10" class="stage-note">No B Item rows from D1 for current filters.</td></tr>';
+  }
+
   function applyLast(){ if (lastData) applyStageData(lastData); }
   function fetchStageControl(force){
     var key = currentKey();
@@ -9166,7 +9235,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
         var j; try { j = JSON.parse(t); } catch(e) { throw new Error('stage-control non JSON: '+t.slice(0,120)); }
         if (!r.ok || !j.ok) throw new Error(j && j.error ? j.error : ('HTTP '+r.status));
         lastData = j; lastAt = Date.now(); applyStageData(j);
-        try { console.info('V36 Stage Control D1 applied:', key, j); } catch(e) {}
+        try { console.info('V38 Stage Control D1 applied:', key, j); } catch(e) {}
         return j;
       }); })
       .catch(function(e){ console.warn('V36 Stage Control D1 failed:', e && e.message || e); applyLast(); })
