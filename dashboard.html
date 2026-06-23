@@ -8897,3 +8897,159 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 })();
 </script>
 
+<script>
+/* === V34 Dashboard Filter State Sync REAL FIX ===
+   Root cause: original dashboard filter state is stored in global lexical variable `F`.
+   Earlier patches read `window.F`, which stayed undefined/stale, so B Item KPI requests
+   kept using ALL even after selecting CCC or JGC.
+*/
+(function(){
+  if (window.__V34_DASH_FILTER_STATE_SYNC_REAL__) return;
+  window.__V34_DASH_FILTER_STATE_SYNC_REAL__ = true;
+
+  function log(){ try { console.info.apply(console, arguments); } catch(e){} }
+  function clearCaches(){
+    try { FILTER_CACHE = { key:'', data:null }; } catch(e) {}
+    try { PUNCH_FAST_CACHE = {}; } catch(e) {}
+  }
+
+  // Expose the real lexical F to old/new patch code that reads window.F.
+  try {
+    Object.defineProperty(window, 'F', {
+      configurable: true,
+      enumerable: false,
+      get: function(){ return F; },
+      set: function(v){ F = v || {con:'ALL',areaGrp:['ALL'],area:['ALL'],sys:['ALL'],stage:['ALL']}; }
+    });
+  } catch(e) {
+    try { window.F = F; } catch(_) {}
+  }
+
+  function normalizeContractor(c){
+    c = String(c || '').trim();
+    if (!c || c.toUpperCase() === 'ALL') return 'ALL';
+    if (/JGC/i.test(c)) return 'JGC Direct MP';
+    if (/CCC/i.test(c)) return 'CCC';
+    return c;
+  }
+
+  function currentFilterContractor(){
+    try { return normalizeContractor(F && F.con); } catch(e){ return 'ALL'; }
+  }
+
+  // A dedicated helper for all B Item KPI code.
+  window.getDashboardBItemContractorFilter = currentFilterContractor;
+
+  // Override refreshDashboardBItemKpi with a clean filter-aware version.
+  var inflight = null;
+  var lastKey = '';
+  var lastData = null;
+  var lastAt = 0;
+  function tokenHeaders(){
+    var h = {'Accept':'application/json'};
+    try {
+      var t = localStorage.getItem('ccc_bitem_auth_token') || localStorage.getItem('ccc_auth_token') || localStorage.getItem('cccToken') || '';
+      if (t) h.Authorization = 'Bearer ' + t;
+    } catch(e) {}
+    return h;
+  }
+  function arr(v){
+    if (Array.isArray(v)) return v.filter(Boolean).filter(function(x){return String(x).toUpperCase() !== 'ALL';});
+    if (!v || String(v).toUpperCase() === 'ALL') return [];
+    return [v];
+  }
+  function params(){
+    var p = new URLSearchParams();
+    p.set('contractor', currentFilterContractor());
+    try { var areas = arr(F && F.area); if (areas.length) p.set('area', areas.join(',')); } catch(e) {}
+    try { var stages = arr(F && F.stage); if (stages.length) p.set('stage', stages.join(',')); } catch(e) {}
+    return p;
+  }
+  function fmtTotal(v){ v=Number(v||0); return v>=1000 ? (v/1000).toFixed(1)+'K' : v.toLocaleString(); }
+  function fmt(v){ return Number(v||0).toLocaleString(); }
+  function punchBHTML(obj){
+    var total = Number(obj && obj.total || 0);
+    var cleared = Number(obj && obj.cleared || 0);
+    var balance = Number(obj && obj.balance);
+    if (!Number.isFinite(balance)) balance = Math.max(total - cleared, 0);
+    var pc = total > 0 ? Math.round(cleared / total * 100) : 0;
+    return '<div class="punch-box" data-bitem-registry="v34" data-bitem-key="'+lastKey+'" data-bitem-total="'+total+'" data-bitem-cleared="'+cleared+'" data-bitem-balance="'+balance+'">' +
+      '<div class="punch-cat">Punch B</div>' +
+      '<div class="punch-total" style="color:var(--orange)">'+fmtTotal(total)+'</div>' +
+      '<div class="punch-sub">Cleared: '+fmt(cleared)+'</div>' +
+      '<div class="punch-sub" style="color:var(--red)">Balance: '+fmt(balance)+'</div>' +
+      '<div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:var(--orange)"></div></div>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div>' +
+    '</div>';
+  }
+  function replacePunchB(containerId, data){
+    if (!data || !data.ok) return;
+    var obj = data.punchB || data;
+    var wrap = document.getElementById(containerId);
+    if (!wrap) return;
+    var cards = Array.prototype.slice.call(wrap.children || []);
+    var card = cards.find(function(x){ var c=x.querySelector && x.querySelector('.punch-cat'); return c && /Punch\s*B/i.test(c.textContent||''); }) || cards[1];
+    if (!card) return;
+    card.outerHTML = punchBHTML(obj);
+  }
+  function applyData(data){
+    if (!data || !data.ok) return;
+    replacePunchB('punchCards', data);
+    replacePunchB('punchPageCards', data);
+  }
+  window.refreshDashboardBItemKpi = function(force){
+    var p = params();
+    var key = p.toString();
+    var now = Date.now();
+    if (!force && key === lastKey && lastData && now - lastAt < 15000) { applyData(lastData); return Promise.resolve(lastData); }
+    lastKey = key;
+    if (inflight) return inflight;
+    inflight = fetch('/api/bitem/kpi?' + key + '&_=' + now, { headers: tokenHeaders(), cache:'no-store' })
+      .then(function(r){ return r.text().then(function(t){
+        var j; try { j = JSON.parse(t); } catch(e){ throw new Error('B Item KPI non-JSON: '+t.slice(0,120)); }
+        if (!r.ok || !j.ok) throw new Error(j && j.error ? j.error : ('HTTP '+r.status));
+        lastData = j; lastAt = Date.now(); applyData(j);
+        log('V34 B Item KPI applied:', key, j);
+        return j;
+      }); })
+      .catch(function(e){ console.warn('V34 B Item KPI failed:', e && e.message || e); if(lastData) applyData(lastData); })
+      .finally(function(){ inflight = null; });
+    return inflight;
+  };
+
+  // Patch setF/resetFilters so every sidebar change triggers a clean KPI reload using the real F.
+  if (typeof setF === 'function' && !setF.__v34FilterSync) {
+    var oldSetF = setF;
+    setF = window.setF = function(key, val, btn){
+      var out = oldSetF.apply(this, arguments);
+      clearCaches();
+      try { window.refreshDashboardBItemKpi(true); } catch(e) {}
+      setTimeout(function(){ try { window.refreshDashboardBItemKpi(true); } catch(e){} }, 250);
+      return out;
+    };
+    setF.__v34FilterSync = true;
+  }
+  if (typeof resetFilters === 'function' && !resetFilters.__v34FilterSync) {
+    var oldReset = resetFilters;
+    resetFilters = window.resetFilters = function(){
+      var out = oldReset.apply(this, arguments);
+      clearCaches();
+      try { window.refreshDashboardBItemKpi(true); } catch(e) {}
+      setTimeout(function(){ try { window.refreshDashboardBItemKpi(true); } catch(e){} }, 250);
+      return out;
+    };
+    resetFilters.__v34FilterSync = true;
+  }
+
+  // Stop old renderers from visually winning after our KPI arrives.
+  ['punchCards','punchPageCards'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (!el || !('MutationObserver' in window) || el.__v34BitemLock) return;
+    el.__v34BitemLock = true;
+    new MutationObserver(function(){ if (lastData) setTimeout(function(){ applyData(lastData); }, 0); }).observe(el, {childList:true});
+  });
+
+  setTimeout(function(){ clearCaches(); window.refreshDashboardBItemKpi(true); }, 500);
+  setTimeout(function(){ window.refreshDashboardBItemKpi(true); }, 1500);
+})();
+</script>
