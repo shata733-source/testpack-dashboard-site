@@ -8529,19 +8529,23 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 </script>
 
 <script>
-/* === V29 Dashboard B Item Registry Source ===
-   Purpose: make B Item Control / D1 bitem_registry the single source for Punch B dashboard counts.
-   - Save/Clear in B Item updates final_status in D1.
-   - Dashboard reads /api/bitem/kpi, so Punch B Balance responds without using embedded old Excel B Item rows.
-   - Contractor filter uses the final CCC/JGC area rule from the backend endpoint.
+/* === V30 Dashboard B Item Registry Source - throttled and safe ===
+   B Item Control / D1 is the source of Punch B dashboard counts.
+   This version prevents repeated KPI requests and handles temporary API errors without freezing the dashboard.
 */
 (function(){
-  if (window.__V29_DASH_BITEM_REGISTRY__) return;
+  if (window.__V30_DASH_BITEM_REGISTRY__) return;
+  window.__V30_DASH_BITEM_REGISTRY__ = true;
   window.__V29_DASH_BITEM_REGISTRY__ = true;
 
-  function safeText(v){ return String(v == null ? '' : v); }
+  var inFlight = null;
+  var lastKey = '';
+  var lastOkAt = 0;
+  var lastFailAt = 0;
+  var timer = null;
+
   function filterList(v){
-    if (Array.isArray(v)) return v.filter(Boolean).filter(x => String(x).toUpperCase() !== 'ALL');
+    if (Array.isArray(v)) return v.filter(Boolean).filter(function(x){ return String(x).toUpperCase() !== 'ALL'; });
     if (!v || String(v).toUpperCase() === 'ALL') return [];
     return [v];
   }
@@ -8557,7 +8561,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   function tokenHeaders(){
     var h = { 'Accept': 'application/json' };
     try {
-      var t = localStorage.getItem('ccc_bitem_auth_token') || localStorage.getItem('ccc_auth_token') || '';
+      var t = localStorage.getItem('ccc_bitem_auth_token') || localStorage.getItem('ccc_auth_token') || localStorage.getItem('cccToken') || '';
       if (t) h.Authorization = 'Bearer ' + t;
     } catch(e) {}
     return h;
@@ -8571,7 +8575,6 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
       if (areas.length) p.set('area', areas.join(','));
       if (stages.length) p.set('stage', stages.join(','));
     } catch(e) {}
-    p.set('_', String(Date.now()));
     return p;
   }
   function punchBoxHtml(obj){
@@ -8595,46 +8598,73 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     var cards = Array.prototype.slice.call(box.children || []);
     if (cards.length >= 2) cards[1].outerHTML = punchBoxHtml(kpi.punchB || kpi);
   }
-  var seq = 0;
-  async function refreshDashboardBItemKpi(){
-    var my = ++seq;
-    try {
-      var res = await fetch('/api/bitem/kpi?' + dashboardBitemParams().toString(), { headers: tokenHeaders(), cache: 'no-store' });
-      var text = await res.text();
-      var data = null;
-      try { data = JSON.parse(text); } catch(e) { console.warn('B Item KPI returned non-JSON:', text.slice(0,160)); return; }
-      if (my !== seq) return;
-      if (data && data.ok) replacePunchBCard(data);
-    } catch(e) { console.warn('Could not refresh dashboard B Item KPI:', e && e.message || e); }
+  async function runRefresh(){
+    var params = dashboardBitemParams();
+    var key = params.toString();
+    var now = Date.now();
+    // If the same KPI succeeded very recently, do not hammer the API.
+    if (key === lastKey && lastOkAt && now - lastOkAt < 2500) return;
+    // If the same KPI failed recently, wait before trying again.
+    if (key === lastKey && lastFailAt && now - lastFailAt < 8000) return;
+    if (inFlight) return inFlight;
+    lastKey = key;
+    inFlight = fetch('/api/bitem/kpi?' + key + '&_=' + now, { headers: tokenHeaders(), cache: 'no-store' })
+      .then(async function(res){
+        var text = await res.text();
+        var data = null;
+        try { data = JSON.parse(text); } catch(e) {
+          console.warn('B Item KPI returned non-JSON:', text.slice(0,160));
+          lastFailAt = Date.now();
+          return;
+        }
+        if (!res.ok || !data.ok) {
+          console.warn('B Item KPI error:', data);
+          lastFailAt = Date.now();
+          return;
+        }
+        lastOkAt = Date.now();
+        lastFailAt = 0;
+        replacePunchBCard(data);
+      })
+      .catch(function(e){
+        lastFailAt = Date.now();
+        console.warn('Could not refresh dashboard B Item KPI:', e && e.message || e);
+      })
+      .finally(function(){ inFlight = null; });
+    return inFlight;
   }
-  window.refreshDashboardBItemKpi = refreshDashboardBItemKpi;
+  function scheduleRefresh(delay){
+    clearTimeout(timer);
+    timer = setTimeout(runRefresh, delay == null ? 450 : delay);
+  }
+  window.refreshDashboardBItemKpi = function(){ scheduleRefresh(100); };
 
   function patchRenderOverview(){
-    if (typeof window.renderOverview === 'function' && !window.renderOverview.__bitemRegistryPatched) {
+    if (typeof window.renderOverview === 'function' && !window.renderOverview.__bitemRegistryPatchedV30) {
       var old = window.renderOverview;
-      window.renderOverview = function(data){
+      window.renderOverview = function(){
         var out = old.apply(this, arguments);
-        setTimeout(refreshDashboardBItemKpi, 0);
+        scheduleRefresh(650);
         return out;
       };
-      window.renderOverview.__bitemRegistryPatched = true;
+      window.renderOverview.__bitemRegistryPatchedV30 = true;
       try { renderOverview = window.renderOverview; } catch(e) {}
     }
   }
   function patchRefresh(){
-    if (typeof window.refresh === 'function' && !window.refresh.__bitemRegistryPatched) {
+    if (typeof window.refresh === 'function' && !window.refresh.__bitemRegistryPatchedV30) {
       var old = window.refresh;
       window.refresh = function(){
         var out = old.apply(this, arguments);
-        setTimeout(refreshDashboardBItemKpi, 250);
+        scheduleRefresh(1200);
         return out;
       };
-      window.refresh.__bitemRegistryPatched = true;
+      window.refresh.__bitemRegistryPatchedV30 = true;
       try { refresh = window.refresh; } catch(e) {}
     }
   }
-  function boot(){ patchRenderOverview(); patchRefresh(); setTimeout(refreshDashboardBItemKpi,500); }
+  function boot(){ patchRenderOverview(); patchRefresh(); scheduleRefresh(1200); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
-  window.addEventListener('focus', function(){ setTimeout(refreshDashboardBItemKpi, 200); });
+  window.addEventListener('focus', function(){ scheduleRefresh(600); });
 })();
 </script>

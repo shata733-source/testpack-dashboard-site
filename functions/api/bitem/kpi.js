@@ -1,89 +1,113 @@
-import { json, requirePagePermission } from '../../_shared/auth.js';
-import { assertDB, clean } from '../../_shared/bitem.js';
+import { json, requireUser } from '../../_shared/auth.js';
 
-const CCC_ALLOWED_SQL = [
-  "UPPER(COALESCE(area,'')) LIKE '%A211%'","UPPER(COALESCE(comment_text,'')) LIKE '%A211%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A211%'","UPPER(COALESCE(tp_no,'')) LIKE '%A211%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A212%'","UPPER(COALESCE(comment_text,'')) LIKE '%A212%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A212%'","UPPER(COALESCE(tp_no,'')) LIKE '%A212%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A222%'","UPPER(COALESCE(comment_text,'')) LIKE '%A222%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A222%'","UPPER(COALESCE(tp_no,'')) LIKE '%A222%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A231%'","UPPER(COALESCE(comment_text,'')) LIKE '%A231%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A231%'","UPPER(COALESCE(tp_no,'')) LIKE '%A231%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A232%'","UPPER(COALESCE(comment_text,'')) LIKE '%A232%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A232%'","UPPER(COALESCE(tp_no,'')) LIKE '%A232%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A233%'","UPPER(COALESCE(comment_text,'')) LIKE '%A233%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A233%'","UPPER(COALESCE(tp_no,'')) LIKE '%A233%'"
-].join(' OR ');
-
-const EFFECTIVE_CONTRACTOR_SQL = `CASE WHEN UPPER(COALESCE(contractor,'')) LIKE '%CCC%' AND (${CCC_ALLOWED_SQL}) THEN 'CCC' ELSE 'JGC Direct MP' END`;
-
+function clean(v) {
+  if (v === null || v === undefined) return '';
+  return String(v).replace(/\s+/g, ' ').trim();
+}
+function norm(v) { return clean(v).toUpperCase(); }
 function csvList(v) {
   return clean(v).split(',').map(x => clean(x)).filter(Boolean).filter(x => x.toUpperCase() !== 'ALL');
 }
-
-function whereFromUrl(url) {
-  const where = ['active=1'];
-  const binds = [];
-  const contractor = clean(url.searchParams.get('contractor') || '');
-  const finalStatus = clean(url.searchParams.get('final_status') || '');
+const CCC_AREAS = ['A211','A212','A222','A231','A232','A233'];
+function hasAllowedArea(row) {
+  const text = [row.area, row.comment_text, row.iso_or_spool, row.tp_no].map(norm).join(' ');
+  return CCC_AREAS.some(a => text.includes(a));
+}
+function effectiveContractor(row) {
+  const c = norm(row.contractor);
+  return (c.includes('CCC') && !c.includes('JGC') && hasAllowedArea(row)) ? 'CCC' : 'JGC Direct MP';
+}
+function isCleared(row) { return norm(row.final_status) === 'CLEARED'; }
+function hasColumn(cols, name) { return cols.has(String(name).toLowerCase()); }
+function colExpr(cols, name, alias) {
+  return hasColumn(cols, name) ? `${name} AS ${alias || name}` : `'' AS ${alias || name}`;
+}
+async function tableColumns(env, table) {
+  const r = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+  return new Set((r.results || []).map(x => String(x.name || '').toLowerCase()).filter(Boolean));
+}
+function matchesFilters(row, url) {
+  const contractor = clean(url.searchParams.get('contractor') || 'ALL');
+  const finalStatus = clean(url.searchParams.get('final_status') || 'ALL');
   const areas = csvList(url.searchParams.get('area') || '');
   const stages = csvList(url.searchParams.get('stage') || '');
-  const q = clean(url.searchParams.get('q') || '');
+  const q = norm(url.searchParams.get('q') || '');
 
   if (contractor && contractor.toUpperCase() !== 'ALL') {
-    if (/JGC/i.test(contractor)) where.push(`${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP'`);
-    else where.push(`${EFFECTIVE_CONTRACTOR_SQL}='CCC'`);
+    const eff = effectiveContractor(row);
+    if (/JGC/i.test(contractor)) { if (eff !== 'JGC Direct MP') return false; }
+    else if (/CCC/i.test(contractor)) { if (eff !== 'CCC') return false; }
   }
   if (areas.length) {
-    where.push(`(${areas.map(() => 'UPPER(COALESCE(area,\'\')) LIKE ?').join(' OR ')})`);
-    areas.forEach(a => binds.push(`%${a.toUpperCase()}%`));
+    const a = norm(row.area);
+    if (!areas.some(x => a.includes(norm(x)))) return false;
   }
   if (stages.length) {
-    where.push(`(${stages.map(() => 'construction_stage=?').join(' OR ')})`);
-    stages.forEach(s => binds.push(s));
+    const s = norm(row.construction_stage);
+    if (!stages.some(x => s === norm(x))) return false;
   }
-  if (finalStatus) {
-    if (finalStatus.toUpperCase() === 'CLEARED') where.push("final_status='CLEARED'");
-    else if (finalStatus.toUpperCase() === 'NOT CLEARED' || finalStatus.toUpperCase() === 'OPEN') where.push("(final_status IS NULL OR final_status='' OR final_status<>'CLEARED')");
+  if (finalStatus && finalStatus.toUpperCase() !== 'ALL') {
+    const cleared = isCleared(row);
+    if (finalStatus.toUpperCase() === 'CLEARED' && !cleared) return false;
+    if ((finalStatus.toUpperCase() === 'NOT CLEARED' || finalStatus.toUpperCase() === 'OPEN') && cleared) return false;
   }
   if (q) {
-    where.push(`(bitem_id LIKE ? OR tp_no LIKE ? OR comment_text LIKE ? OR material_type LIKE ? OR iso_or_spool LIKE ? OR area LIKE ? OR user_cleared_by LIKE ?)`);
-    const like = `%${q}%`;
-    binds.push(like, like, like, like, like, like, like);
+    const blob = [row.bitem_id, row.tp_no, row.construction_stage, row.comment_text, row.material_type, row.iso_or_spool, row.area, row.user_cleared_by, row.final_status].map(norm).join(' ');
+    if (!blob.includes(q)) return false;
   }
-  return { whereSql: `WHERE ${where.join(' AND ')}`, binds };
+  return true;
 }
 
 export async function onRequestGet(context) {
-  const dbError = assertDB(context.env); if (dbError) return dbError;
-  const auth = await requirePagePermission(context, 'dashboard', 'view');
-  if (auth.error) {
-    const alt = await requirePagePermission(context, 'bitem', 'view');
-    if (alt.error) return auth.error;
+  try {
+    if (!context.env || !context.env.DB) return json({ ok:false, error:'D1 binding DB is not configured' }, 500);
+    const auth = await requireUser(context, []);
+    if (auth.error) return auth.error;
+
+    const url = new URL(context.request.url);
+    const cols = await tableColumns(context.env, 'bitem_registry');
+    if (!cols.size) return json({ ok:false, error:'bitem_registry table was not found or has no columns' }, 500);
+
+    const select = [
+      colExpr(cols, 'bitem_id', 'bitem_id'),
+      colExpr(cols, 'contractor', 'contractor'),
+      colExpr(cols, 'tp_no', 'tp_no'),
+      colExpr(cols, 'construction_stage', 'construction_stage'),
+      colExpr(cols, 'comment_text', 'comment_text'),
+      colExpr(cols, 'material_type', 'material_type'),
+      colExpr(cols, 'iso_or_spool', 'iso_or_spool'),
+      colExpr(cols, 'area', 'area'),
+      colExpr(cols, 'final_status', 'final_status'),
+      colExpr(cols, 'user_cleared_by', 'user_cleared_by'),
+      hasColumn(cols, 'active') ? 'active AS active' : '1 AS active'
+    ].join(', ');
+
+    // Fetch only lightweight columns. 12-13k rows is safe here and avoids fragile SQL expressions / schema mismatch.
+    const rs = await context.env.DB.prepare(`SELECT ${select} FROM bitem_registry`).all();
+    const rows = (rs.results || []).filter(r => Number(r.active ?? 1) === 1).filter(r => matchesFilters(r, url));
+
+    const by = {};
+    let total = 0, cleared = 0, balance = 0;
+    for (const r of rows) {
+      const c = effectiveContractor(r);
+      if (!by[c]) by[c] = { total: 0, cleared: 0, balance: 0 };
+      by[c].total++;
+      total++;
+      if (isCleared(r)) { by[c].cleared++; cleared++; }
+      else { by[c].balance++; balance++; }
+    }
+
+    return json({
+      ok: true,
+      source: 'bitem_registry',
+      method: 'v30_js_safe_kpi',
+      logic: 'CCC only if CCC row contains A211/A212/A222/A231/A232/A233; otherwise JGC Direct MP',
+      filters: Object.fromEntries(url.searchParams.entries()),
+      total, cleared, balance,
+      by_contractor: by,
+      punchB: { total, cleared, balance }
+    });
+  } catch (e) {
+    return json({ ok:false, source:'bitem_registry', error:(e && e.message) ? e.message : String(e || 'Unknown error') }, 500);
   }
-
-  const url = new URL(context.request.url);
-  const { whereSql, binds } = whereFromUrl(url);
-
-  const byRows = await context.env.DB.prepare(`
-    SELECT ${EFFECTIVE_CONTRACTOR_SQL} AS contractor,
-           COUNT(*) AS total,
-           SUM(CASE WHEN final_status='CLEARED' THEN 1 ELSE 0 END) AS cleared,
-           SUM(CASE WHEN final_status IS NULL OR final_status='' OR final_status<>'CLEARED' THEN 1 ELSE 0 END) AS balance
-    FROM bitem_registry
-    ${whereSql}
-    GROUP BY ${EFFECTIVE_CONTRACTOR_SQL}
-  `).bind(...binds).all();
-
-  const by = {}; let total = 0, cleared = 0, balance = 0;
-  for (const r of (byRows.results || [])) {
-    const item = { total: Number(r.total || 0), cleared: Number(r.cleared || 0), balance: Number(r.balance || 0) };
-    by[r.contractor] = item;
-    total += item.total; cleared += item.cleared; balance += item.balance;
-  }
-
-  return json({
-    ok: true,
-    source: 'bitem_registry',
-    logic: 'effective contractor: CCC only if CCC row contains A211/A212/A222/A231/A232/A233; otherwise JGC Direct MP',
-    filters: Object.fromEntries(url.searchParams.entries()),
-    total, cleared, balance,
-    by_contractor: by,
-    punchB: { total, cleared, balance }
-  });
 }
