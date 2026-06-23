@@ -1,28 +1,42 @@
-import { json, createToken, getClientIP, ensureAuthTables, verifyPasswordRecord, audit } from '../../_shared/auth.js';
+import { json, createToken, getClientIP, ensureAuthTables, verifyPasswordRecord, makePasswordHash, audit, normalizePagePermissions, userForClient } from '../../_shared/auth.js';
 import { clean } from '../../_shared/bitem.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
   let body = {};
   try { body = await request.json(); } catch (_) {}
-  const username = clean(body.username);
+  const username = clean(body.username).toLowerCase();
   const password = clean(body.password);
   const ip = getClientIP(request);
 
-  const adminUser = env.ADMIN_USERNAME || 'ccc';
-  const adminPass = env.ADMIN_PASSWORD || 'ccc2026';
-
+  const adminUser = clean(env.ADMIN_USERNAME || 'ccc').toLowerCase();
+  const adminPass = clean(env.ADMIN_PASSWORD || 'ccc2026');
   let user = null;
-  if (username === adminUser && password === adminPass) {
-    user = { username, display_name: env.ADMIN_DISPLAY_NAME || 'Mohamed Shata', role: 'admin' };
-  } else if (env.DB) {
+  let dbUserExists = false;
+
+  if (env.DB) {
     await ensureAuthTables(env);
     const u = await env.DB.prepare('SELECT * FROM users WHERE username=?').bind(username).first();
+    dbUserExists = !!u;
     const ok = u && Number(u.is_active) === 1 && await verifyPasswordRecord(u, password);
     if (ok) {
-      user = { username: u.username, display_name: u.display_name || u.username, role: u.role || 'user' };
+      user = userForClient(u);
       await env.DB.prepare("UPDATE users SET last_login_at=datetime('now'), last_login_ip=?, updated_at=datetime('now') WHERE username=?")
         .bind(ip, username).run().catch(() => null);
+    }
+  }
+
+  // Built-in emergency admin. If this admin is not in D1 yet, create it once.
+  if (!user && !dbUserExists && username === adminUser && password === adminPass) {
+    const perms = normalizePagePermissions('admin');
+    user = userForClient({ username: adminUser, display_name: env.ADMIN_DISPLAY_NAME || 'Mohamed Shata', role: 'admin', view_pages: perms.view_pages, edit_pages: perms.edit_pages, is_active: 1 });
+    if (env.DB) {
+      try {
+        const ph = await makePasswordHash(adminPass);
+        await env.DB.prepare(`INSERT INTO users(username, display_name, role, password_hash, password_salt, password_plain, is_active, view_pages, edit_pages, created_by, created_at, updated_at)
+          VALUES(?,?,?,?,?,NULL,1,?,?, 'system',datetime('now'),datetime('now'))`)
+          .bind(adminUser, user.display_name, 'admin', ph.hash, ph.salt, JSON.stringify(perms.view_pages), JSON.stringify(perms.edit_pages)).run();
+      } catch (_) {}
     }
   }
 

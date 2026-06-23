@@ -1,5 +1,7 @@
 const CCC_AUTH_TOKEN_KEY = 'ccc_bitem_auth_token';
 const CCC_AUTH_USER_KEY  = 'ccc_bitem_auth_user';
+const CCC_AUTH_TOKEN_SESSION_KEY = 'ccc_bitem_auth_token_session';
+const CCC_AUTH_USER_SESSION_KEY  = 'ccc_bitem_auth_user_session';
 const CCC_PAGES = {
   dashboard: { title: 'Test Pack Dashboard', href: '/dashboard.html#/dashboard' },
   bitem: { title: 'B Punch Edit', href: '/bitem.html#/bitem' },
@@ -9,21 +11,46 @@ const CCC_PAGES = {
 const CCC_EDIT_PAGES = ['bitem','users'];
 
 function authToken(){
-  try{return localStorage.getItem(CCC_AUTH_TOKEN_KEY)||'';}catch(e){return '';}
+  try{return localStorage.getItem(CCC_AUTH_TOKEN_KEY)||sessionStorage.getItem(CCC_AUTH_TOKEN_SESSION_KEY)||'';}catch(e){try{return sessionStorage.getItem(CCC_AUTH_TOKEN_SESSION_KEY)||'';}catch(_){return '';}}
 }
 function authUser(){
-  try{return JSON.parse(localStorage.getItem(CCC_AUTH_USER_KEY)||'null');}catch(e){return null;}
+  try{
+    const raw=localStorage.getItem(CCC_AUTH_USER_KEY)||sessionStorage.getItem(CCC_AUTH_USER_SESSION_KEY)||'null';
+    return JSON.parse(raw);
+  }catch(e){return null;}
 }
 function setPortalAuth(token,user){
   try{
-    if(token)localStorage.setItem(CCC_AUTH_TOKEN_KEY,token);
-    if(user)localStorage.setItem(CCC_AUTH_USER_KEY,JSON.stringify(user||{}));
-  }catch(e){}
+    if(token){localStorage.setItem(CCC_AUTH_TOKEN_KEY,token);sessionStorage.setItem(CCC_AUTH_TOKEN_SESSION_KEY,token);}
+    if(user){const u=JSON.stringify(user||{});localStorage.setItem(CCC_AUTH_USER_KEY,u);sessionStorage.setItem(CCC_AUTH_USER_SESSION_KEY,u);}
+  }catch(e){
+    try{
+      if(token)sessionStorage.setItem(CCC_AUTH_TOKEN_SESSION_KEY,token);
+      if(user)sessionStorage.setItem(CCC_AUTH_USER_SESSION_KEY,JSON.stringify(user||{}));
+    }catch(_){}
+  }
 }
 function clearPortalAuth(){
   try{localStorage.removeItem(CCC_AUTH_TOKEN_KEY);localStorage.removeItem(CCC_AUTH_USER_KEY);}catch(e){}
+  try{sessionStorage.removeItem(CCC_AUTH_TOKEN_SESSION_KEY);sessionStorage.removeItem(CCC_AUTH_USER_SESSION_KEY);sessionStorage.removeItem('cccVisitorMode');}catch(e){}
 }
-function nextUrl(){return location.pathname + location.search + location.hash;}
+function normalizePortalNext(raw){
+  let n=raw||'/projects.html';
+  try{n=decodeURIComponent(n);}catch(e){}
+  if(!n || n==='/' || n==='/index' || n==='/index.html')n='/projects.html';
+  const map={
+    '/projects':'/projects.html',
+    '/dashboard':'/dashboard.html#/dashboard',
+    '/bitem':'/bitem.html#/bitem',
+    '/bitem-monitoring':'/bitem-monitoring.html#/monitoring',
+    '/users':'/users.html',
+    '/profile':'/profile.html'
+  };
+  if(map[n])n=map[n];
+  if(!String(n).startsWith('/'))n='/projects.html';
+  return n;
+}
+function nextUrl(){return normalizePortalNext(location.pathname + location.search + location.hash);}
 
 async function api(path, opts={}){
   opts = opts || {};
@@ -36,12 +63,24 @@ async function api(path, opts={}){
   if(!res.ok)throw Object.assign(new Error(data.error||data.message||res.statusText),{status:res.status,data});
   return data;
 }
+function localAuthFallback(){
+  const t=authToken();
+  const u=authUser();
+  if(t && u && (u.username || u.sub)) return {ok:true,user:u,localFallback:true};
+  return {ok:false,user:null};
+}
 async function currentUser(){
   try{
     const d=await api('/api/auth/me');
     if(d && d.user) setPortalAuth(null,d.user);
     return d;
-  }catch(e){return {ok:false,user:null}}
+  }catch(e){
+    // Prevent the login -> projects -> login loop if /api/auth/me is delayed, cached,
+    // or temporarily mismatched during Cloudflare preview deployment.
+    const fb=localAuthFallback();
+    if(fb.ok){console.warn('Using local auth fallback until /api/auth/me is available:',e);return fb;}
+    return {ok:false,user:null};
+  }
 }
 function roleOf(data){return (data&&data.user&&(data.user.role||data.user.role_name)) || (data&&data.role) || (authUser()&&authUser().role) || '';}
 function arr(v){
