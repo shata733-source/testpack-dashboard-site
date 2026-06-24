@@ -1,27 +1,31 @@
 import { json, requireUser } from '../../_shared/auth.js';
 import {
-  assertDB, clean, tpNo, constructionStage, punchCategory,
+  clean, tpNo, constructionStage, punchCategory,
   deriveContractor, commentText, materialType, isoOrSpool, sheetNo, rowArea,
   isBItemRow, fingerprint, buildTpStatusMap, queryCleared, finalDecision
 } from '../../_shared/bitem.js';
+import { assertSupabase, sbFetch } from '../../_shared/supabase.js';
 
-// Smaller batches are safer for D1 when row_json is large.
-const MAX_IN_PARAMS = 10;
-const DB_BATCH_SIZE = 5;
+const MAX_IN_PARAMS = 80;
 
-function chunks(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
+function nowIso() { return new Date().toISOString(); }
 function s(v) {
   if (v === undefined || v === null) return '';
   if (typeof v === 'string') return v;
   if (typeof v === 'number' || typeof v === 'boolean') return String(v);
   try { return JSON.stringify(v); } catch (_) { return String(v); }
 }
-
+function enc(v) { return encodeURIComponent(String(v || '')); }
+function chunks(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+function displayIdFromCounter(contractor, tp, seq) {
+  const c = contractor || 'JGC';
+  const t = tp || 'NO-TP';
+  return `${c}-B-${t}-C${String(seq).padStart(3, '0')}`;
+}
 function compactRow(row) {
   const keepNames = [
     'TP NUMBER', 'TestPackNo', 'Test Pack No', 'TP No',
@@ -57,22 +61,112 @@ function compactRow(row) {
   return out;
 }
 
-async function runBatches(env, statements) {
-  for (const part of chunks(statements, DB_BATCH_SIZE)) {
-    if (part.length) await env.DB.batch(part);
+async function sbJson(env, path, init = {}) {
+  const r = await sbFetch(env, path, init);
+  const text = await r.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; }
+  catch (_) { throw new Error(`Supabase returned non-JSON (${r.status}): ${text.slice(0, 800)}`); }
+  if (!r.ok) throw new Error(`Supabase request failed (${r.status}) ${path}: ${JSON.stringify(data).slice(0, 1000)}`);
+  return { data, headers: r.headers, status: r.status };
+}
+
+async function fetchExistingByFingerprints(env, fps) {
+  const out = new Map();
+  const uniq = [...new Set((fps || []).filter(Boolean).map(String))];
+  for (const part of chunks(uniq, MAX_IN_PARAMS)) {
+    const inList = part.join(',');
+    const path = `/rest/v1/bitem_registry?select=fingerprint,bitem_id,contractor,tp_no,construction_stage,punch_category,comment_text,material_type,iso_or_spool,area,query_status,query_cleared_date,final_status,final_cleared_date,user_cleared_date,user_cleared_by,last_edited_by,last_edited_at,source_flag,sync_note,active&fingerprint=in.(${inList})`;
+    const { data } = await sbJson(env, path, { method: 'GET' });
+    for (const r of (Array.isArray(data) ? data : [])) out.set(String(r.fingerprint), r);
+  }
+  return out;
+}
+
+async function upsertRows(env, rows) {
+  if (!rows.length) return;
+  for (const part of chunks(rows, 200)) {
+    await sbJson(env, `/rest/v1/bitem_registry?on_conflict=fingerprint`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify(part)
+    });
   }
 }
 
-async function selectMap(env, sqlPrefix, values, keyField) {
-  const out = new Map();
-  const uniq = [...new Set((values || []).filter(Boolean).map(String))];
-  if (!uniq.length) return out;
-  for (const part of chunks(uniq, MAX_IN_PARAMS)) {
-    const qs = part.map(() => '?').join(',');
-    const res = await env.DB.prepare(`${sqlPrefix} IN (${qs})`).bind(...part).all();
-    for (const r of (res.results || [])) out.set(String(r[keyField]), r);
+async function insertAudit(env, rows) {
+  if (!rows.length) return;
+  try {
+    await sbJson(env, `/rest/v1/bitem_audit_log`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'prefer': 'return=minimal' },
+      body: JSON.stringify(rows)
+    });
+  } catch (e) {
+    console.warn('BITEM_SUPABASE_AUDIT_SKIPPED', e && (e.message || e));
   }
-  return out;
+}
+
+async function upsertSyncRun(env, row) {
+  try {
+    await sbJson(env, `/rest/v1/bitem_sync_runs?on_conflict=sync_id`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'prefer': 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(row)
+    });
+  } catch (e) {
+    console.warn('BITEM_SUPABASE_SYNC_RUN_SKIPPED', e && (e.message || e));
+  }
+}
+
+async function updateSyncRunCounters(env, syncId, add) {
+  // Keep this deliberately light. The source of truth is bitem_registry itself.
+  try {
+    const { data } = await sbJson(env, `/rest/v1/bitem_sync_runs?select=processed_rows,inserted_rows,updated_rows,removed_rows,skipped_rows&sync_id=eq.${enc(syncId)}&limit=1`, { method: 'GET' });
+    const cur = Array.isArray(data) && data[0] ? data[0] : {};
+    const patch = {
+      processed_rows: Number(cur.processed_rows || 0) + Number(add.processed || 0),
+      inserted_rows: Number(cur.inserted_rows || 0) + Number(add.inserted || 0),
+      updated_rows: Number(cur.updated_rows || 0) + Number(add.updated || 0),
+      removed_rows: Number(cur.removed_rows || 0) + Number(add.removed || 0),
+      skipped_rows: Number(cur.skipped_rows || 0) + Number(add.skipped || 0),
+      status: add.status || 'RUNNING',
+      ...(add.finished_at ? { finished_at: add.finished_at } : {})
+    };
+    await sbJson(env, `/rest/v1/bitem_sync_runs?sync_id=eq.${enc(syncId)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'prefer': 'return=minimal' },
+      body: JSON.stringify(patch)
+    });
+  } catch (e) {
+    console.warn('BITEM_SUPABASE_SYNC_RUN_COUNTERS_SKIPPED', e && (e.message || e));
+  }
+}
+
+async function maxSeqForKey(env, contractor, tp) {
+  // Supabase migrated data already has B Item IDs. For new comments, continue the C### sequence per contractor/TP.
+  const prefix = `${contractor || 'JGC'}-B-${tp || 'NO-TP'}-C`;
+  const { data } = await sbJson(env, `/rest/v1/bitem_registry?select=bitem_id&contractor=eq.${enc(contractor)}&tp_no=eq.${enc(tp)}&bitem_id=like.${enc(prefix)}*&limit=1000`, { method: 'GET' });
+  let max = 0;
+  for (const r of (Array.isArray(data) ? data : [])) {
+    const m = String(r.bitem_id || '').match(/-C(\d+)$/);
+    if (m) max = Math.max(max, Number(m[1] || 0));
+  }
+  return max;
+}
+
+async function assignIdsForNewItems(env, newItems) {
+  const seqMap = new Map();
+  for (const item of newItems) {
+    const key = `${item.contractor || 'JGC'}|${item.tp || 'NO-TP'}`;
+    if (!seqMap.has(key)) seqMap.set(key, await maxSeqForKey(env, item.contractor || 'JGC', item.tp || 'NO-TP'));
+    const next = Number(seqMap.get(key) || 0) + 1;
+    item.displayId = displayIdFromCounter(item.contractor || 'JGC', item.tp || 'NO-TP', next);
+    seqMap.set(key, next);
+  }
 }
 
 function statusChanged(existing, qStatus, decision) {
@@ -84,7 +178,6 @@ function statusChanged(existing, qStatus, decision) {
          String(existing.source_flag || '') !== String(decision.sourceFlag || '') ||
          String(existing.sync_note || '') !== String(decision.syncNote || '');
 }
-
 function rowMetaChanged(existing, row, contractor, tp) {
   if (!existing) return true;
   return String(existing.contractor || '') !== String(contractor || '') ||
@@ -97,45 +190,39 @@ function rowMetaChanged(existing, row, contractor, tp) {
          String(existing.area || '') !== String(rowArea(row) || '');
 }
 
-function displayIdFromCounter(contractor, tp, seq) {
-  const c = contractor || 'JGC';
-  const t = tp || 'NO-TP';
-  return `${c}-B-${t}-C${String(seq).padStart(3, '0')}`;
-}
+async function deactivateMissing(env, syncId) {
+  const countResp = await sbFetch(env, `/rest/v1/bitem_registry?select=id&active=eq.1&last_sync_id=neq.${enc(syncId)}`, {
+    method: 'GET',
+    headers: { 'prefer': 'count=exact', 'range': '0-0' }
+  });
+  const cr = countResp.headers.get('content-range') || '';
+  const m = cr.match(/\/(\d+)$/);
+  const removed = m ? Number(m[1] || 0) : 0;
+  await countResp.arrayBuffer().catch(()=>null);
 
-async function nextIdsForNewRows(env, newItems) {
-  const keys = [...new Set(newItems.map(x => x.counterKey))];
-  if (!keys.length) return;
-  const counterMap = await selectMap(env, 'SELECT counter_key, contractor, tp_no, next_no FROM bitem_counters WHERE counter_key', keys, 'counter_key');
-  const working = new Map();
-  for (const k of keys) working.set(k, Number((counterMap.get(k) || {}).next_no || 1));
-
-  for (const item of newItems) {
-    const next = working.get(item.counterKey) || 1;
-    item.displayId = displayIdFromCounter(item.contractor, item.tp, next);
-    working.set(item.counterKey, next + 1);
+  if (removed > 0) {
+    await sbJson(env, `/rest/v1/bitem_registry?active=eq.1&last_sync_id=neq.${enc(syncId)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'prefer': 'return=minimal' },
+      body: JSON.stringify({
+        active: 0,
+        source_flag: 'REMOVED_FROM_FMS_CCC_EXCEL',
+        sync_note: 'This comment did not return in the latest FMS / CCC Excel source.',
+        updated_at: nowIso()
+      })
+    });
   }
-
-  const stmts = [];
-  for (const k of keys) {
-    const [contractor, tp] = k.split('|');
-    stmts.push(env.DB.prepare(`
-      INSERT INTO bitem_counters(counter_key, contractor, tp_no, next_no, updated_at)
-      VALUES(?,?,?,?,datetime('now'))
-      ON CONFLICT(counter_key) DO UPDATE SET next_no=excluded.next_no, updated_at=datetime('now')
-    `).bind(s(k), s(contractor || 'JGC'), s(tp || 'NO-TP'), Number(working.get(k) || 1)));
-  }
-  await runBatches(env, stmts);
+  return removed;
 }
 
 async function handleSync(context) {
-  const dbError = assertDB(context.env); if (dbError) return dbError;
+  const sbError = assertSupabase(context.env); if (sbError) return sbError;
   const auth = await requireUser(context, ['admin', 'user']);
   if (auth.error) return auth.error;
-  const user = auth.user;
+  const user = auth.user || {};
 
   let body = {};
-  try { body = await context.request.json(); } catch (_) { return json({ ok: false, error: 'Invalid JSON body' }, 400); }
+  try { body = await context.request.json(); } catch (_) { return json({ ok:false, source:'Supabase', error:'Invalid JSON body' }, 400); }
 
   const syncId = clean(body.syncId) || `SYNC-${Date.now()}`;
   const rows = Array.isArray(body.rows) ? body.rows : [];
@@ -144,10 +231,18 @@ async function handleSync(context) {
   const tpStatusByTP = buildTpStatusMap(body.tpStatusByTP || {});
 
   if (isFirst) {
-    await context.env.DB.prepare(`
-      INSERT OR REPLACE INTO bitem_sync_runs(sync_id, started_by, started_at, total_input_rows, processed_rows, inserted_rows, updated_rows, removed_rows, skipped_rows, status)
-      VALUES(?,?,datetime('now'),?,0,0,0,0,0,?)
-    `).bind(s(syncId), s(user.sub), Number(body.totalRows || rows.length || 0), 'RUNNING').run();
+    await upsertSyncRun(context.env, {
+      sync_id: syncId,
+      started_by: s(user.username || user.sub || ''),
+      started_at: nowIso(),
+      total_input_rows: Number(body.totalRows || rows.length || 0),
+      processed_rows: 0,
+      inserted_rows: 0,
+      updated_rows: 0,
+      removed_rows: 0,
+      skipped_rows: 0,
+      status: 'RUNNING'
+    });
   }
 
   const validRaw = [];
@@ -159,15 +254,9 @@ async function handleSync(context) {
     const contractor = deriveContractor(row);
     const tp = tpNo(row);
     const q = queryCleared(row, tpStatusByTP);
-    validRaw.push({ row, fp, contractor, tp, counterKey: `${contractor || 'JGC'}|${tp || 'NO-TP'}`, q });
+    validRaw.push({ row, fp, contractor, tp, q });
   }
 
-  // Some Excel rows can be duplicated or can produce the same stable fingerprint
-  // inside the same chunk. Without this de-duplication, two INSERT statements in
-  // one D1 batch may try to insert the same fingerprint and fail with:
-  // UNIQUE constraint failed: bitem_registry.fingerprint.
-  // Keep the last occurrence in the chunk, but count the duplicates as skipped
-  // so the sync run remains transparent.
   const byFingerprint = new Map();
   for (const item of validRaw) {
     if (byFingerprint.has(item.fp)) duplicateFingerprintsInChunk++;
@@ -176,23 +265,23 @@ async function handleSync(context) {
   const valid = [...byFingerprint.values()];
   skipped += duplicateFingerprintsInChunk;
 
-  const existingMap = await selectMap(context.env, `SELECT fingerprint, bitem_id, contractor, tp_no, construction_stage, punch_category, comment_text, material_type, iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, last_edited_by, last_edited_at, source_flag, sync_note, active FROM bitem_registry WHERE fingerprint`, valid.map(x => x.fp), 'fingerprint');
+  const existingMap = await fetchExistingByFingerprints(context.env, valid.map(x => x.fp));
   const newItems = valid.filter(x => !existingMap.get(x.fp));
-  await nextIdsForNewRows(context.env, newItems);
+  await assignIdsForNewItems(context.env, newItems);
 
-  const stmts = [];
+  const upserts = [];
   let inserted = 0, updated = 0, changed = 0;
   const flags = {};
+  const ts = nowIso();
 
   for (const item of valid) {
     const { row, fp, contractor, tp, q } = item;
     const existing = existingMap.get(fp);
     const qStatus = q.cleared ? 'CLEARED' : 'NOT CLEARED';
-    const rowJson = JSON.stringify(compactRow(row));
-    let decision, displayId;
+    const rowJson = compactRow(row);
+    let decision;
 
     if (!existing) {
-      displayId = item.displayId || displayIdFromCounter(contractor, tp, 1);
       decision = {
         finalStatus: (q.cleared || q.stageClosed) ? 'CLEARED' : 'OPEN',
         finalDate: q.cleared ? (q.date || '') : (q.stageClosed ? (q.stageDate || '') : ''),
@@ -200,93 +289,110 @@ async function handleSync(context) {
         queryDate: q.date || '',
         syncNote: q.userNote || 'New comment received from latest FMS / CCC Excel B Item row.'
       };
-      stmts.push(context.env.DB.prepare(`
-        INSERT INTO bitem_registry(
-          bitem_id, fingerprint, contractor, tp_no, construction_stage, punch_category,
-          comment_text, material_type, iso_or_spool, area, query_status, query_cleared_date,
-          final_status, final_cleared_date, user_cleared_date, source_flag, sync_note,
-          active, first_seen_at, last_seen_at, last_sync_id, row_json, updated_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,datetime('now'),datetime('now'),?,?,datetime('now'))
-      `).bind(
-        s(displayId), s(fp), s(contractor), s(tp), s(constructionStage(row)), s(punchCategory(row)),
-        s(commentText(row)), s(materialType(row)), s(isoOrSpool(row)), s(rowArea(row)), s(qStatus), s(q.date || ''),
-        s(decision.finalStatus), s(decision.finalDate), '', s(decision.sourceFlag), s(decision.syncNote),
-        s(syncId), s(rowJson)
-      ));
+      upserts.push({
+        bitem_id: item.displayId,
+        fingerprint: fp,
+        contractor: contractor || 'JGC',
+        tp_no: tp,
+        construction_stage: constructionStage(row),
+        punch_category: punchCategory(row),
+        comment_text: commentText(row),
+        material_type: materialType(row),
+        iso_or_spool: isoOrSpool(row),
+        area: rowArea(row),
+        query_status: qStatus,
+        query_cleared_date: q.date || '',
+        final_status: decision.finalStatus,
+        final_cleared_date: decision.finalDate || '',
+        user_cleared_date: '',
+        user_cleared_by: '',
+        source_flag: decision.sourceFlag,
+        sync_note: decision.syncNote,
+        active: 1,
+        first_seen_at: ts,
+        last_seen_at: ts,
+        last_sync_id: syncId,
+        row_json: rowJson,
+        updated_at: ts
+      });
       inserted++;
     } else {
-      displayId = existing.bitem_id;
       decision = finalDecision(existing, q);
       const statusDiff = statusChanged(existing, qStatus, { ...decision, queryDate: q.date || '' });
       const metaDiff = rowMetaChanged(existing, row, contractor, tp);
       if (statusDiff) changed++;
-
       if (statusDiff || metaDiff || String(existing.active || '1') !== '1') {
-        // Full update only when real values changed. This avoids rewriting large row_json
-        // for thousands of SAME_* rows and keeps the Worker below Cloudflare CPU limits.
-        stmts.push(context.env.DB.prepare(`
-          UPDATE bitem_registry SET
-            contractor=?, tp_no=?, construction_stage=?, punch_category=?, comment_text=?, material_type=?, iso_or_spool=?, area=?,
-            query_status=?, query_cleared_date=?, final_status=?, final_cleared_date=?, source_flag=?, sync_note=?,
-            active=1, last_seen_at=datetime('now'), last_sync_id=?, row_json=?, updated_at=datetime('now')
-          WHERE fingerprint=?
-        `).bind(
-          s(contractor), s(tp), s(constructionStage(row)), s(punchCategory(row)), s(commentText(row)), s(materialType(row)), s(isoOrSpool(row)), s(rowArea(row)),
-          s(qStatus), s(q.date || ''), s(decision.finalStatus), s(decision.finalDate || ''), s(decision.sourceFlag), s(decision.syncNote),
-          s(syncId), s(rowJson), s(fp)
-        ));
+        upserts.push({
+          fingerprint: fp,
+          contractor: contractor || 'JGC',
+          tp_no: tp,
+          construction_stage: constructionStage(row),
+          punch_category: punchCategory(row),
+          comment_text: commentText(row),
+          material_type: materialType(row),
+          iso_or_spool: isoOrSpool(row),
+          area: rowArea(row),
+          query_status: qStatus,
+          query_cleared_date: q.date || '',
+          final_status: decision.finalStatus,
+          final_cleared_date: decision.finalDate || '',
+          source_flag: decision.sourceFlag,
+          sync_note: decision.syncNote,
+          active: 1,
+          last_seen_at: ts,
+          last_sync_id: syncId,
+          row_json: rowJson,
+          updated_at: ts
+        });
       } else {
-        // Seen-only update for unchanged rows. This is the critical 1102 fix.
-        stmts.push(context.env.DB.prepare(`
-          UPDATE bitem_registry SET
-            active=1, last_seen_at=datetime('now'), last_sync_id=?
-          WHERE fingerprint=?
-        `).bind(s(syncId), s(fp)));
+        upserts.push({ fingerprint: fp, active: 1, last_seen_at: ts, last_sync_id: syncId });
       }
       updated++;
     }
     flags[decision.sourceFlag] = (flags[decision.sourceFlag] || 0) + 1;
   }
 
-  // Keep chunk sync light: do not write a SYNC_CHUNK audit row for every small request.
-  // Cloudflare Workers can hit CPU limits when thousands of chunks each write audit logs.
-  if (isFirst || isLast) {
-    stmts.push(context.env.DB.prepare("INSERT INTO bitem_audit_log(action, bitem_id, fingerprint, username, display_name, role, details, created_at) VALUES(?,?,?,?,?,?,?,datetime('now'))")
-      .bind(isFirst ? 'SYNC_START_CHUNK' : 'SYNC_LAST_CHUNK', '', '', s(user.sub), s(user.name), s(user.role), JSON.stringify({ syncId, processed: valid.length, inserted, updated, changed, skipped, duplicateFingerprintsInChunk, isFirst, isLast, flags })));
-  }
+  await upsertRows(context.env, upserts);
 
-  await runBatches(context.env, stmts);
+  if (isFirst || isLast) {
+    await insertAudit(context.env, [{
+      action: isFirst ? 'SYNC_START_CHUNK_SUPABASE' : 'SYNC_LAST_CHUNK_SUPABASE',
+      bitem_id: '',
+      fingerprint: '',
+      username: s(user.username || user.sub || ''),
+      display_name: s(user.display_name || user.name || ''),
+      role: s(user.role || ''),
+      details: { syncId, processed: valid.length, inserted, updated, changed, skipped, duplicateFingerprintsInChunk, isFirst, isLast, flags },
+      created_at: ts
+    }]);
+  }
 
   let removed = 0;
   if (isLast) {
-    const missingCount = await context.env.DB.prepare('SELECT COUNT(*) AS n FROM bitem_registry WHERE active=1 AND last_sync_id<>?').bind(s(syncId)).first();
-    removed = Number(missingCount?.n || 0);
-    await context.env.DB.prepare(`
-      UPDATE bitem_registry SET active=0, source_flag='REMOVED_FROM_FMS_CCC_EXCEL', sync_note='This comment did not return in the latest FMS / CCC Excel source.', updated_at=datetime('now')
-      WHERE active=1 AND last_sync_id<>?
-    `).bind(s(syncId)).run();
-    await context.env.DB.prepare("INSERT INTO bitem_audit_log(action, bitem_id, fingerprint, username, display_name, role, details, created_at) VALUES(?,?,?,?,?,?,?,datetime('now'))")
-      .bind('SYNC_COMPLETE', '', '', s(user.sub), s(user.name), s(user.role), JSON.stringify({ syncId, removed })).run();
-    await context.env.DB.prepare("UPDATE bitem_sync_runs SET finished_at=datetime('now'), processed_rows=processed_rows+?, inserted_rows=inserted_rows+?, updated_rows=updated_rows+?, removed_rows=?, skipped_rows=skipped_rows+?, status=? WHERE sync_id=?")
-      .bind(Number(valid.length), Number(inserted), Number(updated), Number(removed), Number(skipped), 'DONE', s(syncId)).run();
+    removed = await deactivateMissing(context.env, syncId);
+    await insertAudit(context.env, [{
+      action: 'SYNC_COMPLETE_SUPABASE',
+      bitem_id: '',
+      fingerprint: '',
+      username: s(user.username || user.sub || ''),
+      display_name: s(user.display_name || user.name || ''),
+      role: s(user.role || ''),
+      details: { syncId, removed },
+      created_at: nowIso()
+    }]);
+    await updateSyncRunCounters(context.env, syncId, { processed: valid.length, inserted, updated, removed, skipped, status: 'DONE', finished_at: nowIso() });
   } else {
-    await context.env.DB.prepare('UPDATE bitem_sync_runs SET processed_rows=processed_rows+?, inserted_rows=inserted_rows+?, updated_rows=updated_rows+?, skipped_rows=skipped_rows+? WHERE sync_id=?')
-      .bind(Number(valid.length), Number(inserted), Number(updated), Number(skipped), s(syncId)).run();
+    await updateSyncRunCounters(context.env, syncId, { processed: valid.length, inserted, updated, skipped, status: 'RUNNING' });
   }
 
-  return json({ ok: true, syncId, processed: valid.length, skipped, duplicateFingerprintsInChunk, inserted, updated, changed, removed, flags });
+  return json({ ok:true, source:'Supabase', syncId, processed: valid.length, skipped, duplicateFingerprintsInChunk, inserted, updated, changed, removed, flags });
 }
 
 export async function onRequestPost(context) {
   try {
     return await handleSync(context);
   } catch (err) {
-    console.error('BITEM_SYNC_EXCEPTION', err && (err.stack || err.message || err));
-    return json({
-      ok: false,
-      error: 'B Item sync Worker exception',
-      message: String(err && (err.message || err)),
-      stack: String(err && err.stack || '').slice(0, 2500)
-    }, 500);
+    console.error('BITEM_SUPABASE_SYNC_EXCEPTION', err && (err.stack || err.message || err));
+    return json({ ok:false, source:'Supabase', error:'B Item Supabase sync Worker exception', message:String(err && (err.message || err)), stack:String(err && err.stack || '').slice(0, 2500) }, 500);
   }
 }
