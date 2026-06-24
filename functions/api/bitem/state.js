@@ -116,11 +116,13 @@ export async function onRequestGet(context) {
     // V51: keep the state endpoint lightweight.
     // Do NOT run CREATE/ALTER checks on every table refresh; those schema checks are done by sync/save.
     // Also do not calculate page KPIs/facets unless requested by the page. This avoids intermittent 503s from heavy repeated D1 work.
-    const wantFacets = url.searchParams.get('facets') !== '0';
+    const wantFacets = url.searchParams.get('facets') === '1';
     const wantKpi = url.searchParams.get('kpi') === '1';
 
-    const countPromise = context.env.DB.prepare(`SELECT COUNT(*) AS n FROM bitem_registry ${whereSql}`).bind(...binds).first();
-    const rowsPromise = context.env.DB.prepare(`
+    // V52: keep state endpoint single-purpose and predictable.
+    // Run only the two queries needed for the current page. No facets/KPI unless explicitly requested.
+    const count = await context.env.DB.prepare(`SELECT COUNT(*) AS n FROM bitem_registry ${whereSql}`).bind(...binds).first();
+    const rows = await context.env.DB.prepare(`
       SELECT bitem_id, fingerprint, ${EFFECTIVE_CONTRACTOR_SQL} AS contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
              iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date,
              user_cleared_date, user_cleared_by, last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
@@ -130,11 +132,8 @@ export async function onRequestGet(context) {
       LIMIT ? OFFSET ?
     `).bind(...binds, limit, offset).all();
 
-    const [count, rows, facetData, kpi] = await Promise.all([
-      countPromise,
-      rowsPromise,
-      wantFacets ? facets(context.env) : Promise.resolve(null),
-      wantKpi ? context.env.DB.prepare(`
+    const facetData = wantFacets ? await facets(context.env) : null;
+    const kpi = wantKpi ? await context.env.DB.prepare(`
         SELECT
           SUM(CASE WHEN active=1 THEN 1 ELSE 0 END) AS active_total,
           SUM(CASE WHEN active=1 AND final_status='CLEARED' THEN 1 ELSE 0 END) AS active_cleared,
@@ -145,8 +144,7 @@ export async function onRequestGet(context) {
           SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP' THEN 1 ELSE 0 END) AS jgc_total,
           SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP' AND final_status='CLEARED' THEN 1 ELSE 0 END) AS jgc_cleared
         FROM bitem_registry
-      `).first() : Promise.resolve(null)
-    ]);
+      `).first() : null;
 
     const out = { ok: true, total: count?.n || 0, limit, offset, rows: rows.results || [] };
     if (facetData) out.facets = facetData;

@@ -98,7 +98,7 @@ function login(){location.href='/login?next='+encodeURIComponent(location.pathna
 function toast(msg,err=false){const t=document.createElement('div');t.className='toast'+(err?' err':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3600);} 
 async function readJson(res){const txt=await res.text();try{return JSON.parse(txt);}catch(e){const ct=(res.headers&&res.headers.get('content-type')||'').toLowerCase(); if((txt||'').trim().startsWith('<')||ct.includes('text/html')) throw new Error('Backend returned HTML instead of JSON. Please retry after redeploy.'); throw new Error((txt||'').slice(0,180)||'Bad JSON response');}}
 function wait(ms){return new Promise(r=>setTimeout(r,ms));}
-async function fetchTextWithRetry(url,opt,tries=2){let last=null; for(let i=0;i<tries;i++){try{const res=await fetch(url,opt); const txt=await res.text(); const ct=(res.headers.get('content-type')||'').toLowerCase(); const html=(txt||'').trim().startsWith('<')||ct.includes('text/html'); if((res.status===502||res.status===503||res.status===504||html)&&i<tries-1){last=new Error('Temporary backend response '+res.status); await wait(750+i*850); continue;} return {res,txt,html};}catch(e){last=e; if(e&&e.name==='AbortError') throw e; if(i<tries-1){await wait(750+i*850); continue;} throw e;}} throw last||new Error('Request failed');}
+async function fetchTextWithRetry(url,opt,tries=5){let last=null; for(let i=0;i<tries;i++){try{const res=await fetch(url,opt); const txt=await res.text(); const ct=(res.headers.get('content-type')||'').toLowerCase(); const html=(txt||'').trim().startsWith('<')||ct.includes('text/html'); if((res.status===502||res.status===503||res.status===504||html)&&i<tries-1){last=new Error('Temporary backend response '+res.status); await wait(650+Math.min(i*900,2600)); continue;} return {res,txt,html};}catch(e){last=e; if(e&&e.name==='AbortError') throw e; if(i<tries-1){await wait(650+Math.min(i*900,2600)); continue;} throw e;}} throw last||new Error('Request failed');}
 function parseJsonPayload(res,txt,html){try{return JSON.parse(txt);}catch(e){if(html)throw new Error('Backend returned HTML instead of JSON.'); throw new Error((txt||'').slice(0,180)||'Bad JSON response');}}
 
 async function checkAuth(){const t=token(); if(!t){login();return false;} const local=cachedUser(); if(local){STATE.user=local; STATE.canEdit=(local.role==='admin'||(local.edit_pages||local.permissions?.edit||[]).includes('bitem'));}
@@ -146,14 +146,14 @@ async function load(page=STATE.page){
  if(STATE.loadAbort){try{STATE.loadAbort.abort();}catch(e){}}
  STATE.loadAbort=('AbortController' in window)?new AbortController():null;
  if(!STATE.rows.length) $('#wrap').innerHTML='<div class="loader">Loading B Item rows...</div>'; else $('#countText').textContent='B Item Rows: loading...';
- const p=new URLSearchParams({limit:STATE.limit,offset:STATE.offset,include_removed:'0',facets:STATE.facetsReady?'0':'1',kpi:'0',t:Date.now()});
+ const p=new URLSearchParams({limit:STATE.limit,offset:STATE.offset,include_removed:'0',facets:'0',kpi:'0',t:Date.now()});
  if(STATE.filters.q)p.set('q',STATE.filters.q); if(STATE.filters.contractor!=='ALL')p.set('contractor',STATE.filters.contractor); if(STATE.filters.area!=='ALL')p.set('area',STATE.filters.area); if(STATE.filters.stage!=='ALL')p.set('stage',STATE.filters.stage); if(STATE.filters.status!=='ALL')p.set('final_status',STATE.filters.status);
  try{
-  const out=await fetchTextWithRetry('/api/bitem/state?'+p,{headers:authHeaders(),cache:'no-store',signal:STATE.loadAbort?STATE.loadAbort.signal:undefined},2);
+  const out=await fetchTextWithRetry('/api/bitem/state?'+p,{headers:authHeaders(),cache:'no-store',signal:STATE.loadAbort?STATE.loadAbort.signal:undefined},5);
   if(seq!==STATE.loadSeq) return;
   const data=parseJsonPayload(out.res,out.txt,out.html);
   if(!out.res.ok||!data.ok)throw new Error(data.error||('B Item state failed HTTP '+out.res.status));
-  STATE.rows=data.rows||[]; STATE.total=Number(data.total||0); if(data.facets){fillFacets(data.facets||{}); STATE.facetsReady=true;} render();
+  STATE.rows=data.rows||[]; STATE.total=Number(data.total||0); fillFacetsFromRows(STATE.rows); render(); loadFacetsOnce();
  }catch(e){
   if(e&&e.name==='AbortError') return;
   if(seq!==STATE.loadSeq) return;
@@ -162,6 +162,19 @@ async function load(page=STATE.page){
   else $('#wrap').innerHTML='<div class="empty">B Item load failed: '+esc(msg)+'</div>';
  }}
 function fillFacets(f){const area=$('#areaSel'), stage=$('#stageSel'); if(area.options.length<=1){(f.areas||[]).forEach(v=>area.add(new Option(v,v)));} if(stage.options.length<=1){(f.stages||[]).forEach(v=>stage.add(new Option(v,v)));}}
+function addOptionOnce(sel,v){v=clean(v); if(!v||v.toUpperCase()==='ALL')return; if(!Array.from(sel.options).some(o=>o.value===v)) sel.add(new Option(v,v));}
+function fillFacetsFromRows(rows){const area=$('#areaSel'), stage=$('#stageSel'); (rows||[]).forEach(r=>{addOptionOnce(area,r.area); addOptionOnce(stage,r.construction_stage);});}
+let facetsLoading=false;
+async function loadFacetsOnce(){
+ if(STATE.facetsReady||facetsLoading) return;
+ facetsLoading=true;
+ try{
+  const out=await fetchTextWithRetry('/api/bitem/facets?t='+Date.now(),{headers:authHeaders(),cache:'no-store'},3);
+  const data=parseJsonPayload(out.res,out.txt,out.html);
+  if(out.res.ok&&data&&data.ok){fillFacets(data.facets||{}); STATE.facetsReady=true;}
+ }catch(e){/* facets are optional; table must never fail because of them */}
+ facetsLoading=false;
+}
 function applyFilters(){STATE.filters.q=clean($('#q').value); STATE.filters.area=$('#areaSel').value; STATE.filters.stage=$('#stageSel').value; STATE.filters.status=$('#statusSel').value; load(1);} 
 function exportCsv(){const headers=['B Item ID','TP Number','Stage','Area','ISO','Sheet','Punch Category','Material Type','Comment','FMS/CCC Excel Status','Final Status','Punch Cleared Date','User Cleared','Note','Scope']; const lines=[headers.join(',')]; STATE.rows.forEach(r=>{const c=getCols(r); const vals=[c.id,c.tp,c.st,c.area,c.iso,c.sheet,c.cat,c.mat,c.comment,c.query,c.final,c.fdate,c.user,c.note,c.scope].map(v=>'"'+String(v||'').replace(/"/g,'""')+'"'); lines.push(vals.join(','));}); const blob=new Blob([lines.join('\n')],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='B_Item_Current_Page.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500);}
 function boot(){ $('#reloadBtn').onclick=()=>load(STATE.page); $('#exportBtn').onclick=exportCsv; $('#pageSize').onchange=()=>load(1); $('#prevPage').onclick=()=>load(STATE.page-1); $('#nextPage').onclick=()=>load(STATE.page+1); $('#areaSel').onchange=applyFilters; $('#stageSel').onchange=applyFilters; $('#statusSel').onchange=applyFilters; $('#resetFilters').onclick=()=>{STATE.filters={contractor:'ALL',area:'ALL',stage:'ALL',status:'ALL',q:''}; $('#q').value=''; $('#areaSel').value='ALL'; $('#stageSel').value='ALL'; $('#statusSel').value='ALL'; $$('.side-btn[data-contractor]').forEach(x=>x.classList.toggle('active',x.dataset.contractor==='ALL')); load(1);}; let timer=null; $('#q').oninput=()=>{clearTimeout(timer); timer=setTimeout(applyFilters,350);}; $$('.side-btn[data-contractor]').forEach(btn=>btn.onclick=()=>{$$('.side-btn[data-contractor]').forEach(x=>x.classList.remove('active')); btn.classList.add('active'); STATE.filters.contractor=btn.dataset.contractor; load(1);}); function updateThemeBtn(){const isLight=document.body.classList.contains('light'); $('#themeBtn').textContent=isLight?'🌙 Dark':'☀ Light';}
