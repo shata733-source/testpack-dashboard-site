@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CCC Login</title><link rel="stylesheet" href="/assets/portal.css"></head><body><main class="login-wrap"><section class="login-box"><div style="text-align:center"><img src="/assets/ccc-logo.png" style="width:90px;height:80px;object-fit:contain"><h1>CCC Employer Login</h1><p style="color:#9fb3ca">Sign in to project control platform.</p></div><div id="msg"></div><label>Username</label><input id="username" autocomplete="username"><label>Password</label><input id="password" type="password" autocomplete="current-password"><button class="login-btn" id="loginBtn">Login</button></section></main><script src="/assets/portal.js"></script><script>
+const q=new URLSearchParams(location.search);
+const next=normalizePortalNext(q.get('next')||'/projects.html');
+async function doLogin(){
+  const msg=document.getElementById('msg');
+  const btn=document.getElementById('loginBtn');
+  msg.innerHTML=''; btn.disabled=true; btn.textContent='Logging in...';
+  try{
+    const data=await api('/api/auth/login',{method:'POST',body:JSON.stringify({username:username.value.trim(),password:password.value})});
+    setPortalAuth(data.token,data.user);
+    sessionStorage.removeItem('cccVisitorMode');
+    location.replace(next);
+  }catch(e){
+    msg.innerHTML='<div class="msg err">Login failed: '+(e.data?.error||e.message)+'</div>';
+  }finally{
+    btn.disabled=false; btn.textContent='Login';
+  }
+}
+document.getElementById('loginBtn').onclick=doLogin;
+password.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+username.addEventListener('keydown',e=>{if(e.key==='Enter')password.focus();});
+</script></body></html>

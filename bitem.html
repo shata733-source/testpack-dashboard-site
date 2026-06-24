@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>B Item Control — CCC Control Platform</title>
+<style>
+:root{
+  --bg:#060c18;--nav:#071225;--side:#0d1626;--panel:#0f1c2e;--panel2:#132033;
+  --line:#1a3050;--line2:#1f3a5c;--text:#f0f4f8;--muted:#94a3b8;
+  --accent:#00d4ff;--good:#10b981;--bad:#f97316;--danger:#ef4444;--yellow:#ffc400;
+  --mono:Consolas,"JetBrains Mono","Courier New",monospace;--sans:Segoe UI,Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:var(--sans);background:var(--bg);color:var(--text);overflow:hidden}
+body.light{--bg:#dfe8f2;--nav:#0f201a;--side:#e8eef5;--panel:#fff;--panel2:#f3f7fb;--line:#c6d3e2;--line2:#b6c7da;--text:#0b1726;--muted:#42556d;--accent:#007da3}
+button,input,select{font:inherit}
+.top{height:62px;background:linear-gradient(135deg,#09142a,#0d1e38);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;padding:0 16px;position:sticky;top:0;z-index:50;box-shadow:0 2px 24px rgba(0,0,0,.45)}
+.brand{display:flex;align-items:center;gap:9px;min-width:220px;flex-shrink:0}.logo{width:42px;height:42px;object-fit:contain}.brand h1{font-size:17px;margin:0;font-weight:800;letter-spacing:-.25px}.brand p{margin:1px 0 0;color:var(--muted);font-size:11px;font-weight:700;font-family:var(--mono);line-height:1.25}
+.top-actions{display:flex;align-items:center;gap:6px;flex:1;min-width:0}.btn{border:1px solid rgba(0,212,255,.35);background:rgba(0,212,255,.08);color:var(--accent);font-weight:800;border-radius:7px;padding:7px 12px;cursor:pointer;min-height:30px;font-size:12px;white-space:nowrap}.btn:hover{background:rgba(0,212,255,.16)}.btn.gray{background:#102035;color:#d7e8ff;border-color:#294561}.btn.home{margin-left:auto}.btn.good{background:#063b26;color:#b7ffcf;border-color:#22c55e}.btn.danger{background:#3b1116;color:#ffd1d1;border-color:#ef4444}.btn.warn{background:#44230b;color:#ffd7ad;border-color:#f97316}
+.layout{display:grid;grid-template-columns:210px 1fr;height:calc(100% - 62px);min-height:0}.side{background:var(--side);border-right:1px solid var(--line);padding:14px 10px;overflow:auto}.filter-title{color:#4a6080;font-size:10px;letter-spacing:1.5px;font-weight:800;margin:13px 0 7px;text-transform:uppercase}.filter-title:first-child{margin-top:0}.side-btn,.side select{width:100%;height:34px;border:1px solid var(--line2);background:var(--panel2);color:var(--text);border-radius:6px;margin-bottom:7px;padding:0 10px;text-align:left;font-weight:700;font-size:12px}.side-btn.active{border-color:var(--accent);background:rgba(0,212,255,.08);color:#dffaff}.side-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:8px}
+.main{padding:14px 20px;overflow:hidden;display:flex;flex-direction:column;gap:10px;min-width:0}.head{display:flex;align-items:flex-start;gap:16px;justify-content:space-between}.head h2{margin:0;font-size:24px;letter-spacing:-.4px}.head p{margin:6px 0 0;color:#9fb5cf;font-size:12px;line-height:1.35}.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.search{min-width:360px;width:32vw;height:36px;background:#13223a;border:1px solid #26445f;color:var(--text);border-radius:7px;padding:0 13px;font-size:13px}.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;min-height:0;flex:1;box-shadow:0 12px 30px rgba(0,0,0,.20)}.table-meta{display:flex;justify-content:space-between;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line);color:#a8c8f0;font-weight:900;font-size:12px;font-family:var(--mono)}.table-wrap{overflow:auto;min-height:0;flex:1;scrollbar-color:#5b7798 #0c1726;scrollbar-width:thin}.grid{width:100%;border-collapse:collapse;table-layout:fixed;min-width:1660px}.grid th,.grid td{border-bottom:1px solid rgba(45,69,102,.55);padding:8px 10px;vertical-align:top;font-size:12px}.grid td{font-family:var(--mono);font-weight:800;line-height:1.25}.grid th{position:sticky;top:0;background:#15263c;color:#9fc0e8;text-transform:uppercase;font-size:11px;letter-spacing:.65px;z-index:3;font-family:var(--sans);font-weight:800}.grid tr:nth-child(even) td{background:rgba(255,255,255,.018)}.grid tr:hover td{background:rgba(0,212,255,.052)}.grid .filter-row th{top:36px;background:#08111f;z-index:2;padding:6px}.grid .filter-row input{width:100%;height:26px;border:1px solid #25476d;background:#07111e;color:var(--text);border-radius:6px;padding:0 8px;font-size:11px}
+.act{width:78px}.narrow{width:90px}.medium{width:135px}.wide{width:360px}.note{width:330px}.pill{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;border:1px solid #a54813;background:#301807;color:#ff7b22;font-weight:900;white-space:nowrap;font-size:11px;font-family:var(--sans)}.pill.clear{border-color:#15803d;background:#062d1b;color:#54e58b}.cell-date{font-weight:900;color:#e9f6ff}.cell-user{font-weight:900;color:var(--accent)}.cell-note{font-weight:900;color:var(--yellow);line-height:1.3}.editBtn{width:54px;min-height:34px;padding:6px 8px;font-size:11px;display:inline-flex;align-items:center;justify-content:center;flex-direction:column;gap:1px}.editbox{display:flex;align-items:center;gap:6px;background:#061827;border:1px solid rgba(0,212,255,.65);padding:4px;border-radius:8px;min-width:365px;position:relative;z-index:10}.editbox input{height:30px;width:132px;background:#07101e;color:#f8fafc;border:1px solid rgba(0,212,255,.55);border-radius:7px;padding:0 8px;font-weight:900}.editbox button{height:30px;border-radius:7px;font-size:11px;font-weight:900;cursor:pointer;opacity:1!important;filter:none!important;padding:0 9px}.pager{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line);background:#0d1929}.pager .spacer{flex:1}.small{font-size:12px;color:#aac6e8;font-weight:800;font-family:var(--mono)}.toast{position:fixed;right:18px;bottom:18px;z-index:9999;background:#092235;color:#dffaff;border:1px solid #00d4ff;border-radius:10px;padding:12px 14px;box-shadow:0 12px 28px rgba(0,0,0,.35);max-width:520px;font-weight:800}.toast.err{background:#34121a;color:#ffe0e0;border-color:#ef4444}.btn:disabled{opacity:.55!important;cursor:not-allowed!important;filter:grayscale(.15)}.editbox.is-saving{outline:1px solid rgba(16,185,129,.55);box-shadow:0 0 0 2px rgba(16,185,129,.10)}.loader{padding:28px;color:#a8c8f0;font-weight:900}.empty{padding:28px;color:var(--accent);font-weight:900}.hidden{display:none!important}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.side{display:none}.search{width:100%;min-width:0}.top{gap:8px;padding:0 10px}.brand{min-width:0}.brand h1{font-size:14px}.main{padding:12px}.head{display:block}.tools{justify-content:flex-start;margin-top:12px}}
+
+/* === V28 visual polish + sticky action column === */
+body.light{
+  --bg:#eef4fa;--nav:#f8fbff;--side:#e7eff7;--panel:#ffffff;--panel2:#f6f9fd;
+  --line:#c7d6e5;--line2:#aebfd3;--text:#102033;--muted:#506781;--accent:#007ea8;
+}
+body.light .top{background:linear-gradient(180deg,#f8fbff,#edf4fb);border-bottom-color:#b9c9db;box-shadow:0 2px 18px rgba(27,53,82,.12)}
+body.light .btn{background:#e8f7fb;color:#007ea8;border-color:#9addec}body.light .btn.gray{background:#f4f7fb;color:#24425f;border-color:#bed0e2}
+body.light .side{background:#e7eff7}body.light .side-btn,body.light .side select{background:#f8fbff;color:#132337;border-color:#b7cadc}body.light .side-btn.active{background:#dff5fb;color:#005c7c;border-color:#00a9d6}
+body.light .main{background:#eef4fa}body.light .card{background:#fff;border-color:#c7d6e5;box-shadow:0 10px 24px rgba(35,62,92,.10)}
+body.light .table-meta{background:#ffffff;color:#527096;border-bottom-color:#c7d6e5}
+body.light .search{background:#ffffff;color:#132337;border-color:#b7cadc}body.light .search::placeholder{color:#6f8298}
+body.light .grid th{background:#17314d;color:#bfe2ff;border-bottom-color:#244a70}body.light .grid .filter-row th{background:#0c1d31}
+body.light .grid td{background:#ffffff;color:#071525;border-bottom-color:#c7d6e5}body.light .grid tr:nth-child(even) td{background:#f7fbff}body.light .grid tr:hover td{background:#eaf8fd}
+body.light .grid .filter-row input{background:#f6f9fd;color:#102033;border-color:#97b1c9}
+body.light .pager{background:#10243a;border-top-color:#254766}body.light .small{color:#d9ecff}
+.grid th:first-child,.grid td:first-child{position:sticky;left:0;box-shadow:2px 0 0 var(--line);}
+.grid th:first-child{z-index:30;background:#15263c}.grid .filter-row th:first-child{z-index:29;background:#08111f}.grid td:first-child{z-index:10;background:var(--panel)}
+body.light .grid td:first-child{background:#fff}body.light .grid tr:nth-child(even) td:first-child{background:#f7fbff}body.light .grid tr:hover td:first-child{background:#eaf8fd}
+.logo{display:block!important;filter:drop-shadow(0 2px 6px rgba(0,0,0,.25))}.brand{min-width:235px}.brand h1{font-size:17px}.head h2{margin-top:2px}
+.head p,.table-meta div:nth-child(2){display:none!important}
+
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand"><img class="logo" src="data:image/png;base64,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" alt="CCC"><div><h1>B Item Control</h1><p>CCC · Saudi Aramco · DPCU<br>By Mohamed Shata</p></div></div>
+  <div class="top-actions">
+    <button class="btn gray" id="themeBtn">☀ Light</button>
+    <button class="btn gray" id="prevBtn">Δ Previous Update</button>
+    <button class="btn" id="applyBtn">Apply</button>
+    <button class="btn" id="exportListBtn">📤 Export Excel List</button>
+    <button class="btn" id="clearDeltasBtn">↕ Clear Deltas</button>
+    <button class="btn home" onclick="location.href='/projects'">🏠 Home</button>
+  </div>
+</div>
+<div class="layout">
+  <aside class="side">
+    <div class="filter-title">Contractor</div>
+    <button class="side-btn active" data-contractor="ALL"><span class="side-dot"></span>All</button>
+    <button class="side-btn" data-contractor="CCC"><span class="side-dot"></span>CCC</button>
+    <button class="side-btn" data-contractor="JGC Direct MP"><span class="side-dot" style="background:#7c3aed"></span>JGC Direct MP</button>
+    <div class="filter-title">Area</div><select id="areaSel"><option value="ALL">All Areas</option></select>
+    <div class="filter-title">Stage</div><select id="stageSel"><option value="ALL">All Stages</option></select>
+    <div class="filter-title">Final Status</div><select id="statusSel"><option value="ALL">All Status</option><option value="CLEARED">Cleared</option><option value="NOT CLEARED">Not Cleared</option></select>
+    <button class="side-btn" id="resetFilters" style="border-color:#6b2430;color:#ff6b6b;justify-content:center;text-align:center">↺ Reset Filters</button>
+  </aside>
+  <main class="main">
+    <div class="head">
+      <div><h2>B Item Control</h2></div>
+      <div class="tools"><input class="search" id="q" placeholder="Search in B Item table..."><button class="btn" id="reloadBtn">↻ Refresh Table</button><button class="btn" id="exportBtn">📤 Export B Item</button></div>
+    </div>
+    <section class="card">
+      <div class="table-meta"><div id="countText">B Item Rows: --</div><div></div></div>
+      <div class="table-wrap" id="wrap"><div class="loader">Loading B Item rows...</div></div>
+      <div class="pager"><button class="btn gray" id="prevPage">Prev</button><button class="btn gray" id="nextPage">Next</button><span class="small" id="pageText">Page 1 / 1</span><span class="spacer"></span><span class="small">Rows/Page</span><select id="pageSize" class="side-btn" style="width:86px;margin:0"><option>50</option><option selected>100</option><option>200</option><option>500</option></select></div>
+    </section>
+  </main>
+</div>
+<script>
+(function(){
+'use strict';
+const STATE={rows:[],total:0,offset:0,limit:100,page:1,filters:{contractor:'ALL',area:'ALL',stage:'ALL',status:'ALL',q:''},editing:null,user:null,canEdit:false,facetsReady:false,loadSeq:0,loadAbort:null,cacheTTL:600000,cacheFreshTTL:120000,savingKeys:new Set(),recoverTimer:null,autoRetryCount:0};
+const $=s=>document.querySelector(s); const $$=s=>Array.from(document.querySelectorAll(s));
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function clean(v){return String(v??'').replace(/\s+/g,' ').trim();}
+function isDateLike(v){return /^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}$/.test(clean(v))||/^\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}$/.test(clean(v));}
+function validUserName(v){v=clean(v);return v && !isDateLike(v) ? v : '';}
+function token(){try{return localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||'';}catch(e){return '';}}
+function cachedUser(){try{return JSON.parse(localStorage.getItem('ccc_bitem_auth_user')||sessionStorage.getItem('ccc_bitem_auth_user_session')||'null')||null;}catch(e){return null;}}
+function saveUser(u){try{if(u){localStorage.setItem('ccc_bitem_auth_user',JSON.stringify(u));sessionStorage.setItem('ccc_bitem_auth_user_session',JSON.stringify(u));}}catch(e){}}
+function authHeaders(json=false){const h={}; const t=token(); if(t)h.authorization='Bearer '+t; if(json)h['content-type']='application/json'; return h;}
+function login(){location.href='/login?next='+encodeURIComponent(location.pathname+location.hash);}
+function toast(msg,err=false){const t=document.createElement('div');t.className='toast'+(err?' err':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3600);} 
+async function readJson(res){const txt=await res.text();try{return JSON.parse(txt);}catch(e){const ct=(res.headers&&res.headers.get('content-type')||'').toLowerCase(); if((txt||'').trim().startsWith('<')||ct.includes('text/html')) throw new Error('Backend returned HTML instead of JSON. Please retry after redeploy.'); throw new Error((txt||'').slice(0,180)||'Bad JSON response');}}
+function wait(ms){return new Promise(r=>setTimeout(r,ms));}
+async function fetchTextWithRetry(url,opt,tries=5){let last=null; for(let i=0;i<tries;i++){try{const res=await fetch(url,opt); const txt=await res.text(); const ct=(res.headers.get('content-type')||'').toLowerCase(); const html=(txt||'').trim().startsWith('<')||ct.includes('text/html'); if((res.status===502||res.status===503||res.status===504||html)&&i<tries-1){last=new Error('Temporary backend response '+res.status); await wait(650+Math.min(i*900,2600)); continue;} return {res,txt,html};}catch(e){last=e; if(e&&e.name==='AbortError') throw e; if(i<tries-1){await wait(650+Math.min(i*900,2600)); continue;} throw e;}} throw last||new Error('Request failed');}
+function parseJsonPayload(res,txt,html){try{return JSON.parse(txt);}catch(e){if(html)throw new Error('Backend returned HTML instead of JSON.'); throw new Error((txt||'').slice(0,180)||'Bad JSON response');}}
+
+function filterKey(page=STATE.page){
+  return ['v53',page,STATE.limit,STATE.filters.contractor,STATE.filters.area,STATE.filters.stage,STATE.filters.status,STATE.filters.q].map(clean).join('|');
+}
+function cachePrefix(){return 'bitem_state_cache_v56_'+(token().slice(-14)||'anon')+'_';}
+function cacheName(key){return cachePrefix()+key;}
+function readCacheObj(storage,key){
+  try{
+    const raw=storage.getItem(cacheName(key));
+    if(!raw) return null;
+    const obj=JSON.parse(raw);
+    if(!obj || !obj.ts || Date.now()-obj.ts>STATE.cacheTTL) return null;
+    return obj;
+  }catch(e){return null;}
+}
+function cacheGetObj(key){return readCacheObj(sessionStorage,key)||readCacheObj(localStorage,key);}
+function cacheGet(key){const obj=cacheGetObj(key); return obj ? obj.data : null;}
+function cacheSet(key,data){
+  try{
+    const obj={ts:Date.now(),data:{total:Number(data.total||0),limit:Number(data.limit||STATE.limit),offset:Number(data.offset||STATE.offset),rows:data.rows||[]}};
+    const raw=JSON.stringify(obj);
+    sessionStorage.setItem(cacheName(key),raw);
+    localStorage.setItem(cacheName(key),raw);
+  }catch(e){}
+}
+function newestCachedData(){
+  let best=null;
+  const pref=cachePrefix();
+  [sessionStorage,localStorage].forEach(st=>{
+    try{
+      for(let i=0;i<st.length;i++){
+        const k=st.key(i); if(!k||!k.startsWith(pref)) continue;
+        const obj=JSON.parse(st.getItem(k)||'null');
+        if(!obj||!obj.ts||Date.now()-obj.ts>STATE.cacheTTL) continue;
+        if(!best||obj.ts>best.ts) best=obj;
+      }
+    }catch(e){}
+  });
+  return best ? best.data : null;
+}
+function clearStateCaches(){
+  const prefixes=['bitem_state_cache_','bitem_state_cache_v56_'];
+  [sessionStorage,localStorage].forEach(st=>{
+    try{Object.keys(st).forEach(k=>{if(prefixes.some(p=>k.startsWith(p)))st.removeItem(k);});}catch(e){}
+  });
+}
+function cacheCurrentPage(){
+  try{cacheSet(filterKey(STATE.page),{total:STATE.total,limit:STATE.limit,offset:STATE.offset,rows:STATE.rows});}catch(e){}
+}
+function scheduleBackendRetry(page, opts){
+  try{ if(STATE.recoverTimer) clearTimeout(STATE.recoverTimer); }catch(e){}
+  const n=Math.min(Number(STATE.autoRetryCount||0)+1,8); STATE.autoRetryCount=n;
+  const delay=Math.min(1800*n,12000);
+  STATE.recoverTimer=setTimeout(()=>{STATE.recoverTimer=null; load(page||STATE.page,Object.assign({},opts||{},{softRetry:true}));},delay);
+}
+function clearBackendRetry(){
+  try{ if(STATE.recoverTimer) clearTimeout(STATE.recoverTimer); }catch(e){}
+  STATE.recoverTimer=null; STATE.autoRetryCount=0;
+}
+function renderCachedData(data,page){
+  if(!data) return false;
+  STATE.page=page||STATE.page;
+  STATE.rows=data.rows||[];
+  STATE.total=Number(data.total||0);
+  STATE.limit=Number(data.limit||STATE.limit)||STATE.limit;
+  STATE.offset=Number(data.offset||((STATE.page-1)*STATE.limit));
+  fillFacetsFromRows(STATE.rows);
+  render();
+  return true;
+}
+
+async function checkAuth(){const t=token(); if(!t){login();return false;} const local=cachedUser(); if(local){STATE.user=local; STATE.canEdit=(local.role==='admin'||(local.edit_pages||local.permissions?.edit||[]).includes('bitem'));}
+ try{const res=await fetch('/api/auth/me',{headers:authHeaders(),cache:'no-store'}); const data=await readJson(res); if(!res.ok||!data.ok)throw new Error(data.error||'Unauthorized'); STATE.user=data.user||local; saveUser(STATE.user); const views=STATE.user.view_pages||STATE.user.permissions?.view||[]; const edits=STATE.user.edit_pages||STATE.user.permissions?.edit||[]; if(STATE.user.role!=='admin'&&!views.includes('bitem')){location.href='/projects';return false;} STATE.canEdit=STATE.user.role==='admin'||edits.includes('bitem'); return true;}catch(e){ if(!local){login();return false;} return true; }
+}
+function rowJson(r){try{return typeof r.row_json==='string'?JSON.parse(r.row_json||'{}'):(r.row_json||{});}catch(e){return {};}}
+function val(r,names){const src=rowJson(r); for(const n of names){if(r[n]!=null&&clean(r[n]))return r[n]; if(src[n]!=null&&clean(src[n]))return src[n];} const keys=Object.keys(src||{}); for(const n of names){const target=n.toUpperCase().replace(/[^A-Z0-9]/g,''); const k=keys.find(x=>x.toUpperCase().replace(/[^A-Z0-9]/g,'')===target); if(k&&clean(src[k]))return src[k];} return '';}
+function fmtDate(v){v=clean(v); if(!v)return ''; let m=v.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/); if(m)return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`; m=v.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2,4})$/); if(m){const y=m[3].length===2?'20'+m[3]:m[3];return `${y}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;} return v;}
+function displayUser(r){return validUserName(r.user_cleared_by)||validUserName(r.last_edited_by)||'';}
+function finalStatus(r){return clean(r.final_status).toUpperCase()==='CLEARED'?'CLEARED':'NOT CLEARED';}
+function rowVisibleByStatus(r){return STATE.filters.status==='ALL'||finalStatus(r)===STATE.filters.status;}
+function finalDate(r){return fmtDate(r.final_cleared_date||r.user_cleared_date||'');}
+function pill(s){return `<span class="pill ${s==='CLEARED'?'clear':''}">${s==='CLEARED'?'✓ CLEARED':'NOT CLEARED'}</span>`;}
+function rowKey(r){return clean(r.fingerprint)||clean(r.bitem_id);}
+
+function containsAllowedAreaText(s){s=clean(s).toUpperCase();return ['A211','A212','A222','A231','A232','A233'].some(a=>s.includes(a));}
+function effectiveContractor(r){
+  const raw=clean(r.contractor).toUpperCase();
+  const area=clean(r.area).toUpperCase();
+  const hay=[r.area,r.comment_text,r.iso_or_spool,r.tp_no].map(clean).join(' ').toUpperCase();
+  if(raw.includes('CCC') && (area==='GENERAL' || containsAllowedAreaText(hay))) return 'CCC';
+  return 'JGC Direct MP';
+}
+function getCols(r){return {
+ id:clean(r.bitem_id), tp:clean(r.tp_no), st:clean(r.construction_stage), date:fmtDate(val(r,['Date','DATE'])), area:clean(r.area), iso:clean(r.iso_or_spool), sheet:clean(val(r,['Sheet No.','Sheet No','Sheet Number','SheetNo'])), cat:clean(r.punch_category), mat:clean(r.material_type), comment:clean(r.comment_text), query:clean(r.query_status).toUpperCase()==='CLEARED'?'CLEARED':'NOT CLEARED', final:finalStatus(r), fdate:finalDate(r), user:displayUser(r), note:clean(r.sync_note), scope:effectiveContractor(r)};}
+function render(){
+ const rows=STATE.rows; const pageCount=Math.max(1,Math.ceil(STATE.total/STATE.limit)); $('#countText').textContent='B Item Rows: '+Number(STATE.total||0).toLocaleString(); $('#pageText').textContent=`Page ${STATE.page} / ${pageCount}`; $('#prevPage').disabled=STATE.page<=1; $('#nextPage').disabled=STATE.page>=pageCount;
+ if(!rows.length){$('#wrap').innerHTML='<div class="empty">No B Item rows for current filters.</div>';return;}
+ const head=['ACTION','B ITEM ID','TP NUMBER','STAGE','DATE','AREA','ISO NO.','SHEET NO.','PUNCH CATEGORY','MATERIAL TYPE','COMMENT','FMS / CCC EXCEL STATUS','FINAL STATUS','PUNCH CLEARED DATE','USER CLEARED','NOTE','SCOPE'];
+ const cls=['act','medium','medium','medium','narrow','narrow','medium','narrow','narrow','medium','wide','medium','medium','medium','medium','note','medium'];
+ let html='<table class="grid"><thead><tr>'+head.map((h,i)=>`<th class="${cls[i]||''}">${h}</th>`).join('')+'</tr><tr class="filter-row">'+head.map((h,i)=>i===0?'<th></th>':`<th><input data-col="${i}" placeholder="Filter..."></th>`).join('')+'</tr></thead><tbody>';
+ rows.forEach(r=>{const c=getCols(r); html+=`<tr data-key="${esc(rowKey(r))}" data-id="${esc(r.bitem_id)}" data-fp="${esc(r.fingerprint)}">
+ <td><button class="btn editBtn" ${STATE.canEdit?'':'disabled'}>✏️ Edit</button></td><td>${esc(c.id)}</td><td>${esc(c.tp)}</td><td>${esc(c.st)}</td><td>${esc(c.date)}</td><td>${esc(c.area)}</td><td>${esc(c.iso)}</td><td>${esc(c.sheet)}</td><td>${esc(c.cat)}</td><td>${esc(c.mat)}</td><td>${esc(c.comment)}</td><td>${pill(c.query)}</td><td class="finalCell">${pill(c.final)}</td><td class="dateCell cell-date">${esc(c.fdate)}</td><td class="userCell cell-user">${esc(c.user)}</td><td class="cell-note">${esc(c.note)}</td><td>${esc(c.scope)}</td></tr>`;});
+ html+='</tbody></table>'; $('#wrap').innerHTML=html; const w=$('#wrap'); if(w) w.scrollLeft=0; bindTable();
+}
+function bindTable(){ $$('.editBtn').forEach(b=>b.onclick=e=>{e.stopPropagation(); const tr=b.closest('tr'); const r=findRow(tr); if(r) openEditor(tr,r);}); $$('.filter-row input').forEach(inp=>inp.oninput=clientColumnFilter);}
+function clientColumnFilter(){const filters={}; $$('.filter-row input').forEach(i=>{if(clean(i.value))filters[i.dataset.col]=clean(i.value).toUpperCase();}); $$('#wrap tbody tr').forEach(tr=>{let ok=true; Object.entries(filters).forEach(([idx,q])=>{const cell=tr.children[Number(idx)]; if(cell&&!cell.textContent.toUpperCase().includes(q))ok=false;}); tr.style.display=ok?'':'none';});}
+function findRow(tr){const key=tr&&tr.dataset.key; return STATE.rows.find(r=>rowKey(r)===key);}
+function closeEditor(){if(!STATE.editing)return; const {tr,row}=STATE.editing; patchRow(tr,row); STATE.editing=null;}
+function setEditorBusy(box,busy){
+ if(!box)return;
+ box.classList.toggle('is-saving',!!busy);
+ box.querySelectorAll('button,input').forEach(el=>{el.disabled=!!busy;});
+}
+function openEditor(tr,row){
+ if(!STATE.canEdit){toast('View only account. Editing is disabled.',true);return;}
+ const key=rowKey(row);
+ if(STATE.savingKeys.has(key)){toast('This row is already saving. Please wait.',true);return;}
+ closeEditor();
+ STATE.editing={tr,row};
+ const td=tr.querySelector('.dateCell');
+ const current=fmtDate(row.final_cleared_date||row.user_cleared_date||'');
+ td.innerHTML=`<div class="editbox"><input type="date" value="${esc(current)}"><button class="btn" data-cal>📅</button><button class="btn good" data-save>✓ Save</button><button class="btn warn" data-clear>Clear</button><button class="btn danger" data-cancel>×</button></div>`;
+ const box=td.querySelector('.editbox');
+ box.onclick=ev=>ev.stopPropagation(); box.onmousedown=ev=>ev.stopPropagation();
+ const inp=box.querySelector('input');
+ box.querySelector('[data-cal]').onclick=ev=>{ev.stopPropagation(); inp.focus(); try{inp.showPicker&&inp.showPicker();}catch(e){}};
+ box.querySelector('[data-cancel]').onclick=ev=>{ev.stopPropagation(); if(!STATE.savingKeys.has(key))closeEditor();};
+ box.querySelector('[data-save]').onclick=ev=>{ev.stopPropagation(); if(!fmtDate(inp.value)){toast('Please select a date or use Clear.',true);return;} commit(row,fmtDate(inp.value),false,tr);};
+ box.querySelector('[data-clear]').onclick=ev=>{ev.stopPropagation(); if(confirm('Remove Punch Cleared Date? The user name will remain as last editor.')) commit(row,'',true,tr);};
+ inp.onkeydown=ev=>{if(ev.key==='Enter'){ev.preventDefault(); box.querySelector('[data-save]').click();} if(ev.key==='Escape'){ev.preventDefault(); box.querySelector('[data-cancel]').click();}};
+}
+function patchRow(tr,row){if(!tr)return; const c=getCols(row); const f=tr.querySelector('.finalCell'), d=tr.querySelector('.dateCell'), u=tr.querySelector('.userCell'); if(f)f.innerHTML=pill(c.final); if(d)d.textContent=c.fdate; if(u)u.textContent=c.user; const note=tr.querySelector('.cell-note'); if(note)note.textContent=c.note;}
+async function commit(row,iso,clearDate,tr){
+ const key=rowKey(row);
+ if(STATE.savingKeys.has(key)){toast('Save already in progress. Please wait.',true);return;}
+ const box=tr&&tr.querySelector('.editbox');
+ STATE.savingKeys.add(key); setEditorBusy(box,true);
+ try{
+  const payload={bitem_id:row.bitem_id||'',fingerprint:row.fingerprint||'',punch_cleared:iso||'',clear_date:clearDate?'1':'0',remarks:clearDate?'User removed Punch Cleared date':'Inline Punch Cleared update'};
+  const out=await fetchTextWithRetry('/api/bitem/save',{method:'POST',headers:authHeaders(true),body:JSON.stringify(payload),cache:'no-store'},3);
+  const data=parseJsonPayload(out.res,out.txt,out.html);
+  if(!out.res.ok||!data.ok)throw new Error(data.error||'Save failed');
+  const updated=Object.assign({},row,data.row||{}, {user_cleared_by:data.user_cleared_by||data.last_edited_by||(STATE.user&&STATE.user.display_name)||row.user_cleared_by});
+  const idx=STATE.rows.findIndex(x=>rowKey(x)===rowKey(row));
+  if(idx>=0)STATE.rows[idx]=updated;
+  clearStateCaches();
+  STATE.editing=null;
+  if(STATE.filters.status!=='ALL' && !rowVisibleByStatus(updated)){
+    STATE.rows=STATE.rows.filter(x=>rowKey(x)!==key);
+    STATE.total=Math.max(0,Number(STATE.total||0)-1);
+    render();
+  }else{
+    patchRow(tr,updated);
+    cacheCurrentPage();
+  }
+  toast(clearDate?'Date cleared.':'Saved.');
+ }catch(e){
+  toast(e.message||String(e),true);
+  setEditorBusy(box,false);
+ }finally{
+  STATE.savingKeys.delete(key);
+ }
+}
+async function load(page=STATE.page, opts={}){
+ STATE.page=Math.max(1,page); STATE.limit=Number($('#pageSize').value||100); STATE.offset=(STATE.page-1)*STATE.limit;
+ const seq=++STATE.loadSeq;
+ if(STATE.loadAbort){try{STATE.loadAbort.abort();}catch(e){}}
+ STATE.loadAbort=('AbortController' in window)?new AbortController():null;
+ const key=filterKey(STATE.page);
+ const cachedObj=!opts.force ? cacheGetObj(key) : null;
+ const usedCache=renderCachedData(cachedObj && cachedObj.data,STATE.page);
+ if(usedCache && cachedObj && Date.now()-cachedObj.ts < STATE.cacheFreshTTL){
+  $('#countText').textContent='B Item Rows: '+Number(STATE.total||0).toLocaleString()+'  ·  cached';
+  loadFacetsOnce();
+  return;
+ }
+ if(!usedCache){
+  if(!STATE.rows.length) $('#wrap').innerHTML='<div class="loader">Loading B Item rows...</div>';
+  else $('#countText').textContent='B Item Rows: loading...';
+ }else{
+  $('#countText').textContent='B Item Rows: '+Number(STATE.total||0).toLocaleString()+'  ·  updating...';
+ }
+ const p=new URLSearchParams({limit:STATE.limit,offset:STATE.offset,include_removed:'0',t:Date.now()});
+ if(opts.force)p.set('no_cache','1');
+ if(STATE.filters.q)p.set('q',STATE.filters.q); if(STATE.filters.contractor!=='ALL')p.set('contractor',STATE.filters.contractor); if(STATE.filters.area!=='ALL')p.set('area',STATE.filters.area); if(STATE.filters.stage!=='ALL')p.set('stage',STATE.filters.stage); if(STATE.filters.status!=='ALL')p.set('final_status',STATE.filters.status);
+ try{
+  const out=await fetchTextWithRetry('/api/bitem/page?'+p,{headers:authHeaders(),cache:'no-store',signal:STATE.loadAbort?STATE.loadAbort.signal:undefined},4);
+  if(seq!==STATE.loadSeq) return;
+  const data=parseJsonPayload(out.res,out.txt,out.html);
+  if(!out.res.ok||!data.ok)throw new Error(data.error||('B Item state failed HTTP '+out.res.status));
+  STATE.rows=data.rows||[]; STATE.total=Number(data.total||0); clearBackendRetry(); fillFacetsFromRows(STATE.rows); render(); cacheSet(key,{total:STATE.total,limit:STATE.limit,offset:STATE.offset,rows:STATE.rows}); loadFacetsOnce();
+ }catch(e){
+  if(e&&e.name==='AbortError') return;
+  if(seq!==STATE.loadSeq) return;
+  const msg=e.message||String(e);
+  const fallback=newestCachedData();
+  if(!STATE.rows.length && fallback){renderCachedData(fallback,STATE.page); toast('B Item backend is busy; showing the last saved rows while retrying.',true); scheduleBackendRetry(STATE.page,{}); return;}
+  if(usedCache || STATE.rows.length){toast('B Item backend is busy; showing the last loaded rows while retrying.',true); render(); scheduleBackendRetry(STATE.page,{});}
+  else { $('#wrap').innerHTML='<div class="loader">B Item backend is busy. Retrying automatically...</div>'; $('#countText').textContent='B Item Rows: retrying...'; scheduleBackendRetry(STATE.page,{}); }
+ }}
+function fillFacets(f){const area=$('#areaSel'), stage=$('#stageSel'); if(area.options.length<=1){(f.areas||[]).forEach(v=>area.add(new Option(v,v)));} if(stage.options.length<=1){(f.stages||[]).forEach(v=>stage.add(new Option(v,v)));}}
+function addOptionOnce(sel,v){v=clean(v); if(!v||v.toUpperCase()==='ALL')return; if(!Array.from(sel.options).some(o=>o.value===v)) sel.add(new Option(v,v));}
+function fillFacetsFromRows(rows){const area=$('#areaSel'), stage=$('#stageSel'); (rows||[]).forEach(r=>{addOptionOnce(area,r.area); addOptionOnce(stage,r.construction_stage);});}
+let facetsLoading=false;
+async function loadFacetsOnce(){
+ if(STATE.facetsReady||facetsLoading) return;
+ facetsLoading=true;
+ try{
+  const cached=sessionStorage.getItem('bitem_facets_cache_v56')||localStorage.getItem('bitem_facets_cache_v56');
+  if(cached){
+    const obj=JSON.parse(cached);
+    if(obj && obj.ts && Date.now()-obj.ts<600000 && obj.facets){fillFacets(obj.facets); STATE.facetsReady=true; facetsLoading=false; return;}
+  }
+ }catch(e){}
+ try{
+  const out=await fetchTextWithRetry('/api/bitem/facets?t='+Date.now(),{headers:authHeaders(),cache:'no-store'},2);
+  const data=parseJsonPayload(out.res,out.txt,out.html);
+  if(out.res.ok&&data&&data.ok){fillFacets(data.facets||{}); STATE.facetsReady=true; try{const raw=JSON.stringify({ts:Date.now(),facets:data.facets||{}}); sessionStorage.setItem('bitem_facets_cache_v56',raw); localStorage.setItem('bitem_facets_cache_v56',raw);}catch(e){}}
+ }catch(e){/* facets are optional; table must never fail because of them */}
+ facetsLoading=false;
+}
+function applyFilters(){STATE.filters.q=clean($('#q').value); STATE.filters.area=$('#areaSel').value; STATE.filters.stage=$('#stageSel').value; STATE.filters.status=$('#statusSel').value; load(1);} 
+function exportCsv(){const headers=['B Item ID','TP Number','Stage','Area','ISO','Sheet','Punch Category','Material Type','Comment','FMS/CCC Excel Status','Final Status','Punch Cleared Date','User Cleared','Note','Scope']; const lines=[headers.join(',')]; STATE.rows.forEach(r=>{const c=getCols(r); const vals=[c.id,c.tp,c.st,c.area,c.iso,c.sheet,c.cat,c.mat,c.comment,c.query,c.final,c.fdate,c.user,c.note,c.scope].map(v=>'"'+String(v||'').replace(/"/g,'""')+'"'); lines.push(vals.join(','));}); const blob=new Blob([lines.join('\n')],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='B_Item_Current_Page.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500);}
+function boot(){ $('#reloadBtn').onclick=()=>load(STATE.page,{force:true}); $('#exportBtn').onclick=exportCsv; $('#pageSize').onchange=()=>load(1); $('#prevPage').onclick=()=>load(STATE.page-1); $('#nextPage').onclick=()=>load(STATE.page+1); $('#areaSel').onchange=applyFilters; $('#stageSel').onchange=applyFilters; $('#statusSel').onchange=applyFilters; $('#resetFilters').onclick=()=>{STATE.filters={contractor:'ALL',area:'ALL',stage:'ALL',status:'ALL',q:''}; $('#q').value=''; $('#areaSel').value='ALL'; $('#stageSel').value='ALL'; $('#statusSel').value='ALL'; $$('.side-btn[data-contractor]').forEach(x=>x.classList.toggle('active',x.dataset.contractor==='ALL')); load(1);}; let timer=null; $('#q').oninput=()=>{clearTimeout(timer); timer=setTimeout(applyFilters,500);}; $$('.side-btn[data-contractor]').forEach(btn=>btn.onclick=()=>{$$('.side-btn[data-contractor]').forEach(x=>x.classList.remove('active')); btn.classList.add('active'); STATE.filters.contractor=btn.dataset.contractor; load(1);}); function updateThemeBtn(){const isLight=document.body.classList.contains('light'); $('#themeBtn').textContent=isLight?'🌙 Dark':'☀ Light';}
+ $('#themeBtn').onclick=()=>{document.body.classList.toggle('light'); localStorage.setItem('tpDashTheme',document.body.classList.contains('light')?'light':'dark'); updateThemeBtn();}; if(localStorage.getItem('tpDashTheme')==='light')document.body.classList.add('light'); updateThemeBtn(); ['prevBtn','applyBtn','exportListBtn','clearDeltasBtn'].forEach(id=>{const b=document.getElementById(id); if(b)b.onclick=()=>toast('This control belongs to the main dashboard. B Item Control reads directly from D1.');}); checkAuth().then(ok=>{if(ok)load(1);});}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot); else boot();
+})();
+</script>
+</body>
+</html>
