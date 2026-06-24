@@ -245,6 +245,7 @@ async function load(page=STATE.page, opts={}){
   $('#countText').textContent='B Item Rows: '+Number(STATE.total||0).toLocaleString()+'  ·  updating...';
  }
  const p=new URLSearchParams({limit:STATE.limit,offset:STATE.offset,include_removed:'0',t:Date.now()});
+ if(opts.force)p.set('no_cache','1');
  if(STATE.filters.q)p.set('q',STATE.filters.q); if(STATE.filters.contractor!=='ALL')p.set('contractor',STATE.filters.contractor); if(STATE.filters.area!=='ALL')p.set('area',STATE.filters.area); if(STATE.filters.stage!=='ALL')p.set('stage',STATE.filters.stage); if(STATE.filters.status!=='ALL')p.set('final_status',STATE.filters.status);
  try{
   const out=await fetchTextWithRetry('/api/bitem/state?'+p,{headers:authHeaders(),cache:'no-store',signal:STATE.loadAbort?STATE.loadAbort.signal:undefined},4);
