@@ -9315,49 +9315,55 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 </script>
 
 
-<script id="v39-stage-pending-original-logic-d1-counts">
-/* === V39 Stage Control Pending Table: ORIGINAL RANGE + D1 COUNTS ONLY ===
-   Do not change Stage Control totals/charts.
-   Table logic is restored to the original business rule:
-   - Include only Test Packs that have Return for Reinstatement and do NOT have QC Reinstatement Sign.
-   - For those same Test Packs, read B/Back Punch counts from bitem_registry D1 by TP.
-   - No new logic based on all D1 B Item rows.
+<script>
+/* === V40 Stage Pending Original List + D1 B Counts ===
+   Fixes only the Pending Test Packs table logic:
+   - Test Pack list remains the original stage-gap list: Return for Reinstatement and not QC Reinstatement Sign.
+   - B counts are enriched from /api/bitem/stage-control / bitem_registry.
+   - This overrides older V38/V39 pending-table repainting without changing chart/card totals.
 */
 (function(){
-  if (window.__V39_STAGE_PENDING_ORIGINAL_LOGIC__) return;
-  window.__V39_STAGE_PENDING_ORIGINAL_LOGIC__ = true;
+  if (window.__V40_STAGE_PENDING_ORIGINAL_LIST__) return;
+  window.__V40_STAGE_PENDING_ORIGINAL_LIST__ = true;
 
-  var cacheKey = '';
-  var cacheData = null;
-  var cacheAt = 0;
-  var running = null;
+  var lastD1 = null;
+  var lastKey = '';
+  var lastAt = 0;
+  var inflight = null;
+  var timer = null;
+  var applying = false;
 
   function C(v){ return v == null ? '' : String(v).replace(/\s+/g,' ').trim(); }
   function U(v){ return C(v).toUpperCase(); }
-  function esc(v){ return C(v).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
-  function fmt(v){ return Number(v || 0).toLocaleString(); }
+  function esc(v){
+    try { if (typeof escapeHtml === 'function') return escapeHtml(v); } catch(e) {}
+    return C(v).replace(/[&<>"']/g,function(ch){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]); });
+  }
   function arr(v){
     if (Array.isArray(v)) return v.filter(Boolean).filter(function(x){ return U(x) !== 'ALL'; });
     if (!C(v) || U(v) === 'ALL') return [];
     return [C(v)];
   }
-  function getF(){ try { return window.F || F || {}; } catch(e){ return window.F || {}; } }
-  function contractorValue(){
+  function getF(){
+    try { if (typeof F !== 'undefined' && F) return F; } catch(e) {}
+    try { return window.F || {}; } catch(e) { return {}; }
+  }
+  function conValue(){
     var c = C(getF().con || 'ALL');
     if (!c || U(c) === 'ALL') return 'ALL';
     if (/JGC/i.test(c)) return 'JGC Direct MP';
     if (/CCC/i.test(c)) return 'CCC';
     return c;
   }
-  function apiKey(){
+  function currentKey(){
     var f = getF();
     var p = new URLSearchParams();
-    p.set('contractor', contractorValue());
+    p.set('contractor', conValue());
     var areas = arr(f.area); if (areas.length) p.set('area', areas.join(','));
     var stages = arr(f.stage); if (stages.length) p.set('stage', stages.join(','));
     return p.toString();
   }
-  function headers(){
+  function tokenHeaders(){
     var h = {'Accept':'application/json'};
     try {
       var t = localStorage.getItem('ccc_bitem_auth_token') || localStorage.getItem('ccc_auth_token') || localStorage.getItem('cccToken') || '';
@@ -9370,76 +9376,86 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     var p = document.getElementById('page-stagescontrol');
     return !!(p && p.offsetParent !== null);
   }
-  function hasStageSafe(tpInfo, stage){
-    try { return typeof hasStage === 'function' ? !!hasStage(tpInfo, stage) : false; } catch(e) { return false; }
+  function tpNo(info){
+    if (!info) return '';
+    return C(info.tp || info.TP || info.TestPackNo || info['TestPackNo'] || info['Test Pack'] || info['Test Pack No'] || info['TP NUMBER'] || info['TP Number']);
   }
-  function currentStageSafe(tpInfo){
-    try { return typeof currentStageOfTp === 'function' ? C(currentStageOfTp(tpInfo)) : ''; } catch(e) { return ''; }
+  function hasStageSafe(info, stage){
+    try { if (typeof hasStage === 'function') return !!hasStage(info, stage); } catch(e) {}
+    var s = U(stage);
+    if (!info) return false;
+    if (info[stage] != null && C(info[stage]) !== '') return true;
+    for (var k in info) {
+      if (Object.prototype.hasOwnProperty.call(info,k) && U(k) === s && C(info[k]) !== '') return true;
+    }
+    var blob = U(Object.keys(info).map(function(k){ return k + ' ' + info[k]; }).join(' '));
+    return blob.indexOf(s) >= 0;
   }
-  function pendingTpInfos(){
-    var data = [];
-    try { data = typeof getFiltered === 'function' ? (getFiltered() || []) : []; } catch(e) { data = []; }
+  function currentStageSafe(info){
+    try { if (typeof currentStageOfTp === 'function') return C(currentStageOfTp(info)); } catch(e) {}
+    return C(info && (info.current || info.stage || info['Current Stage'] || info['CCC Last Stage'] || info['Last FMS Stage'] || ''));
+  }
+  function getFilteredSafe(){
+    try { if (typeof getFiltered === 'function') return getFiltered() || []; } catch(e) {}
+    try { return window.TP || window.DATA || []; } catch(e) { return []; }
+  }
+  function fmt(v){ return Number(v || 0).toLocaleString(); }
+  function d1Map(data){
+    var m = {};
+    (data && Array.isArray(data.by_tp) ? data.by_tp : []).forEach(function(x){
+      var tp = U(x.tp || x.tp_no || x.test_pack || '');
+      if (tp) m[tp] = x;
+    });
+    return m;
+  }
+  function originalPendingBase(data){
+    data = Array.isArray(data) ? data : getFilteredSafe();
     return data.filter(function(tpInfo){
-      return tpInfo && C(tpInfo.tp) && hasStageSafe(tpInfo,'Return for Reinstatement') && !hasStageSafe(tpInfo,'QC Reinstatement Sign');
+      return tpNo(tpInfo) && hasStageSafe(tpInfo,'Return for Reinstatement') && !hasStageSafe(tpInfo,'QC Reinstatement Sign');
     });
   }
-  function fetchStageData(force){
-    var key = apiKey();
-    var now = Date.now();
-    if (!force && key === cacheKey && cacheData && now - cacheAt < 45000) return Promise.resolve(cacheData);
-    if (running && key === cacheKey) return running;
-    cacheKey = key;
-    running = fetch('/api/bitem/stage-control?' + key, {headers: headers(), cache:'no-store'})
-      .then(function(r){ return r.json(); })
-      .then(function(j){ cacheData = j; cacheAt = Date.now(); running = null; return j; })
-      .catch(function(e){ running = null; console.warn('[V39] pending table D1 fetch failed', e); return cacheData || {ok:false}; });
-    return running;
-  }
-  function buildRows(stageData){
-    var byTp = {};
-    (stageData && stageData.by_tp || []).forEach(function(x){
-      var tp = U(x && x.tp);
-      if (tp) byTp[tp] = x;
-    });
-    return pendingTpInfos().map(function(info){
-      var tp = C(info.tp);
-      var d = byTp[U(tp)] || {};
-      var total = Number(d.total || 0);
-      var cleared = Number(d.cleared || 0);
-      var balance = Number.isFinite(Number(d.balance)) ? Number(d.balance) : Math.max(total - cleared, 0);
-      var retTotal = Number(d.retTotal || 0);
-      var retCleared = Number(d.retCleared || 0);
-      var retBalance = Number.isFinite(Number(d.retBalance)) ? Number(d.retBalance) : Math.max(retTotal - retCleared, 0);
+  function buildRows(base, d1){
+    var map = d1Map(d1);
+    return base.map(function(tpInfo){
+      var tp = tpNo(tpInfo);
+      var x = map[U(tp)] || {};
+      var total = Number(x.total || 0);
+      var cleared = Number(x.cleared || 0);
+      var cns = Number(x.cns || 0);
+      var eng = Number(x.eng || 0);
+      var retTotal = Number(x.retTotal || x.ret_total || 0);
+      var retCleared = Number(x.retCleared || x.ret_cleared || 0);
+      var cnsBalance = Math.max(cns - Math.min(cleared, cns), 0);
       return {
         tp: tp,
-        current: currentStageSafe(info) || 'Return for Reinstatement',
+        current: currentStageSafe(tpInfo),
         total: total,
         cleared: cleared,
-        balance: balance,
-        cns: Number(d.cns || 0),
-        eng: Number(d.eng || 0),
+        balance: Math.max(total - cleared, 0),
+        cns: cns,
+        eng: eng,
+        cnsReady: cnsBalance === 0,
         retTotal: retTotal,
         retCleared: retCleared,
-        retBalance: retBalance
+        retBalance: Math.max(retTotal - retCleared, 0)
       };
-    }).sort(function(a,b){
-      return (b.balance-a.balance) || (b.retBalance-a.retBalance) || (b.total-a.total) || a.tp.localeCompare(b.tp, undefined, {numeric:true});
-    });
+    }).sort(function(a,b){ return (b.balance-a.balance) || (b.retBalance-a.retBalance) || (b.total-a.total) || String(a.tp).localeCompare(String(b.tp), undefined, {numeric:true}); });
   }
-  function paint(rows){
+  function renderPending(data){
+    if (!isStageControlVisible() || !lastD1) return false;
     var countEl = document.getElementById('reinstPendingCount');
     var tableEl = document.getElementById('reinstPendingTable');
-    if (!countEl || !tableEl) return;
+    if (!countEl || !tableEl) return false;
+    var base = originalPendingBase(data || getFilteredSafe());
+    var rows = buildRows(base, lastD1);
     var qEl = document.getElementById('reinstPendingSearch');
-    var q = U(qEl && qEl.value || '');
+    var q = U(qEl && qEl.value);
     var shown = q ? rows.filter(function(r){ return U(r.tp + ' ' + r.current + ' CNS ' + r.cns + ' ENG ' + r.eng).indexOf(q) >= 0; }) : rows;
+    applying = true;
     countEl.textContent = fmt(shown.length) + ' / ' + fmt(rows.length) + ' Test Packs';
     tableEl.innerHTML = shown.map(function(r){
-      var cnsOpen = Math.max(Number(r.cns||0) - Math.min(Number(r.cleared||0), Number(r.cns||0)), 0);
-      var note = (r.total || 0) === 0
-        ? '<span style="color:var(--muted);font-weight:800">No B Punch Received</span>'
-        : (cnsOpen === 0 ? '<span style="color:var(--green);font-weight:800">Ready from Construction</span>' : '<span style="color:var(--orange);font-weight:800">CNS Open</span>');
-      return '<tr data-v39-original-pending="1">' +
+      var note = (r.total || 0) === 0 ? '<span style="color:var(--muted);font-weight:800">No B Punch Received</span>' : (r.cnsReady ? '<span style="color:var(--green);font-weight:800">Ready from Construction</span>' : '<span style="color:var(--orange);font-weight:800">CNS Open</span>');
+      return '<tr data-v40-pending-original="1">' +
         '<td>'+esc(r.tp)+'</td>' +
         '<td>'+esc(r.current)+'</td>' +
         '<td>'+fmt(r.total)+'</td>' +
@@ -9451,32 +9467,103 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
         '<td>'+fmt(r.retCleared)+'</td>' +
         '<td style="color:'+(r.retBalance>0?'var(--red)':'var(--green)')+'">'+fmt(r.retBalance)+'</td>' +
       '</tr>';
-    }).join('') || '<tr data-v39-original-pending="1"><td colspan="10" class="stage-note">No pending test packs between Return for Reinstatement and QC Reinstatement Sign.</td></tr>';
+    }).join('') || '<tr data-v40-pending-original="1"><td colspan="10" class="stage-note">No pending test packs in this original stage range.</td></tr>';
+    setTimeout(function(){ applying = false; }, 30);
+    try { console.info('V40 pending table applied: original stage-gap list + D1 B counts', {shown:shown.length, total:rows.length, key:lastKey}); } catch(e) {}
+    return true;
   }
-  function render(force){
-    if (!isStageControlVisible()) return;
-    fetchStageData(!!force).then(function(j){
-      if (!j || !j.ok) return;
-      paint(buildRows(j));
-    });
+  function fetchD1(force){
+    var key = currentKey();
+    var now = Date.now();
+    if (!force && lastD1 && key === lastKey && now - lastAt < 60000) { renderPending(); return Promise.resolve(lastD1); }
+    if (inflight) return inflight;
+    lastKey = key;
+    inflight = fetch('/api/bitem/stage-control?' + key + '&_v40=' + now, { headers: tokenHeaders(), cache:'no-store' })
+      .then(function(r){ return r.text().then(function(t){
+        var j; try { j = JSON.parse(t); } catch(e) { throw new Error('stage-control non JSON: ' + t.slice(0,120)); }
+        if (!r.ok || !j.ok) throw new Error(j && j.error ? j.error : ('HTTP ' + r.status));
+        lastD1 = j; lastAt = Date.now(); renderPending(); return j;
+      }); })
+      .catch(function(e){ console.warn('V40 pending table failed:', e && e.message || e); if (lastD1) renderPending(); })
+      .finally(function(){ inflight = null; });
+    return inflight;
   }
+  function schedule(force, delay){
+    clearTimeout(timer);
+    timer = setTimeout(function(){ fetchD1(!!force); }, delay == null ? 120 : delay);
+  }
+  window.refreshStagePendingOriginalD1 = function(force){ schedule(!!force, 50); };
 
-  var oldRender = window.renderStagesControl;
-  if (typeof oldRender === 'function') {
-    window.renderStagesControl = function(){
-      var out = oldRender.apply(this, arguments);
-      setTimeout(function(){ render(false); }, 120);
-      setTimeout(function(){ render(false); }, 500);
+  function patchRender(){
+    var fn = null;
+    try { fn = renderStagesControl; } catch(e) { fn = window.renderStagesControl; }
+    if (typeof fn !== 'function' || fn.__v40PendingOriginal) return;
+    var old = fn;
+    var patched = function(data){
+      var out = old.apply(this, arguments);
+      if (isStageControlVisible()) {
+        renderPending(data);
+        schedule(false, 80);
+        setTimeout(function(){ renderPending(data); }, 250);
+        setTimeout(function(){ renderPending(data); }, 800);
+      }
       return out;
     };
+    patched.__v40PendingOriginal = true;
+    window.renderStagesControl = patched;
+    try { renderStagesControl = patched; } catch(e) {}
   }
-
-  document.addEventListener('input', function(ev){ if (ev && ev.target && ev.target.id === 'reinstPendingSearch') render(false); }, true);
-  document.addEventListener('click', function(ev){
-    var t = ev && ev.target;
-    if (t && (t.closest && t.closest('[data-contractor],.contractor-btn,.filter-btn,.side-filter'))) setTimeout(function(){ render(true); }, 300);
-  }, true);
-  setTimeout(function(){ render(true); }, 900);
-  setInterval(function(){ if (isStageControlVisible()) render(false); }, 5000);
+  function patchFilters(){
+    if (typeof setF === 'function' && !setF.__v40PendingOriginal) {
+      var oldSet = setF;
+      setF = window.setF = function(){
+        var out = oldSet.apply(this, arguments);
+        lastD1 = null; lastAt = 0;
+        schedule(true, 80);
+        setTimeout(function(){ schedule(true, 0); }, 650);
+        return out;
+      };
+      setF.__v40PendingOriginal = true;
+    }
+    if (typeof resetFilters === 'function' && !resetFilters.__v40PendingOriginal) {
+      var oldReset = resetFilters;
+      resetFilters = window.resetFilters = function(){
+        var out = oldReset.apply(this, arguments);
+        lastD1 = null; lastAt = 0;
+        schedule(true, 80);
+        setTimeout(function(){ schedule(true, 0); }, 650);
+        return out;
+      };
+      resetFilters.__v40PendingOriginal = true;
+    }
+  }
+  function setupObserver(){
+    var tableEl = document.getElementById('reinstPendingTable');
+    var countEl = document.getElementById('reinstPendingCount');
+    [tableEl, countEl].forEach(function(el){
+      if (!el || !('MutationObserver' in window) || el.__v40PendingObserver) return;
+      el.__v40PendingObserver = true;
+      new MutationObserver(function(){
+        if (applying || !isStageControlVisible() || !lastD1) return;
+        setTimeout(function(){ renderPending(); }, 0);
+      }).observe(el, {childList:true, subtree:true, characterData:true});
+    });
+  }
+  function boot(){
+    patchRender(); patchFilters(); setupObserver();
+    if (isStageControlVisible()) { renderPending(); schedule(true, 200); }
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+  window.addEventListener('hashchange', function(){ setTimeout(boot, 200); setTimeout(function(){ if(isStageControlVisible()) schedule(true,0); }, 600); });
+  document.addEventListener('click', function(){ setTimeout(boot, 150); }, true);
+  var qElDelay = function(){
+    var q = document.getElementById('reinstPendingSearch');
+    if (q && !q.__v40PendingInput) {
+      q.__v40PendingInput = true;
+      q.addEventListener('input', function(){ setTimeout(function(){ renderPending(); }, 0); }, true);
+    }
+  };
+  setTimeout(qElDelay, 500);
+  setInterval(function(){ if (isStageControlVisible()) { patchRender(); patchFilters(); setupObserver(); qElDelay(); if (lastD1) renderPending(); } }, 2500);
 })();
 </script>
