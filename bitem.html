@@ -84,7 +84,7 @@ body.light .grid td:first-child{background:#fff}body.light .grid tr:nth-child(ev
 <script>
 (function(){
 'use strict';
-const STATE={rows:[],total:0,offset:0,limit:100,page:1,filters:{contractor:'ALL',area:'ALL',stage:'ALL',status:'ALL',q:''},editing:null,user:null,canEdit:false,facetsReady:false,loadSeq:0,loadAbort:null,cacheTTL:600000,cacheFreshTTL:120000,savingKeys:new Set()};
+const STATE={rows:[],total:0,offset:0,limit:100,page:1,filters:{contractor:'ALL',area:'ALL',stage:'ALL',status:'ALL',q:''},editing:null,user:null,canEdit:false,facetsReady:false,loadSeq:0,loadAbort:null,cacheTTL:600000,cacheFreshTTL:120000,savingKeys:new Set(),recoverTimer:null,autoRetryCount:0};
 const $=s=>document.querySelector(s); const $$=s=>Array.from(document.querySelectorAll(s));
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function clean(v){return String(v??'').replace(/\s+/g,' ').trim();}
@@ -148,6 +148,16 @@ function clearStateCaches(){
 }
 function cacheCurrentPage(){
   try{cacheSet(filterKey(STATE.page),{total:STATE.total,limit:STATE.limit,offset:STATE.offset,rows:STATE.rows});}catch(e){}
+}
+function scheduleBackendRetry(page, opts){
+  try{ if(STATE.recoverTimer) clearTimeout(STATE.recoverTimer); }catch(e){}
+  const n=Math.min(Number(STATE.autoRetryCount||0)+1,8); STATE.autoRetryCount=n;
+  const delay=Math.min(1800*n,12000);
+  STATE.recoverTimer=setTimeout(()=>{STATE.recoverTimer=null; load(page||STATE.page,Object.assign({},opts||{},{softRetry:true}));},delay);
+}
+function clearBackendRetry(){
+  try{ if(STATE.recoverTimer) clearTimeout(STATE.recoverTimer); }catch(e){}
+  STATE.recoverTimer=null; STATE.autoRetryCount=0;
 }
 function renderCachedData(data,page){
   if(!data) return false;
@@ -276,19 +286,19 @@ async function load(page=STATE.page, opts={}){
  if(opts.force)p.set('no_cache','1');
  if(STATE.filters.q)p.set('q',STATE.filters.q); if(STATE.filters.contractor!=='ALL')p.set('contractor',STATE.filters.contractor); if(STATE.filters.area!=='ALL')p.set('area',STATE.filters.area); if(STATE.filters.stage!=='ALL')p.set('stage',STATE.filters.stage); if(STATE.filters.status!=='ALL')p.set('final_status',STATE.filters.status);
  try{
-  const out=await fetchTextWithRetry('/api/bitem/state?'+p,{headers:authHeaders(),cache:'no-store',signal:STATE.loadAbort?STATE.loadAbort.signal:undefined},4);
+  const out=await fetchTextWithRetry('/api/bitem/page?'+p,{headers:authHeaders(),cache:'no-store',signal:STATE.loadAbort?STATE.loadAbort.signal:undefined},4);
   if(seq!==STATE.loadSeq) return;
   const data=parseJsonPayload(out.res,out.txt,out.html);
   if(!out.res.ok||!data.ok)throw new Error(data.error||('B Item state failed HTTP '+out.res.status));
-  STATE.rows=data.rows||[]; STATE.total=Number(data.total||0); fillFacetsFromRows(STATE.rows); render(); cacheSet(key,{total:STATE.total,limit:STATE.limit,offset:STATE.offset,rows:STATE.rows}); loadFacetsOnce();
+  STATE.rows=data.rows||[]; STATE.total=Number(data.total||0); clearBackendRetry(); fillFacetsFromRows(STATE.rows); render(); cacheSet(key,{total:STATE.total,limit:STATE.limit,offset:STATE.offset,rows:STATE.rows}); loadFacetsOnce();
  }catch(e){
   if(e&&e.name==='AbortError') return;
   if(seq!==STATE.loadSeq) return;
   const msg=e.message||String(e);
   const fallback=newestCachedData();
-  if(!STATE.rows.length && fallback){renderCachedData(fallback,STATE.page); toast('B Item backend is busy; showing the last saved rows.',true); return;}
-  if(usedCache || STATE.rows.length){toast('B Item backend is busy; showing the last loaded rows.',true); render();}
-  else $('#wrap').innerHTML='<div class="empty">B Item load failed: '+esc(msg)+'</div>';
+  if(!STATE.rows.length && fallback){renderCachedData(fallback,STATE.page); toast('B Item backend is busy; showing the last saved rows while retrying.',true); scheduleBackendRetry(STATE.page,{}); return;}
+  if(usedCache || STATE.rows.length){toast('B Item backend is busy; showing the last loaded rows while retrying.',true); render(); scheduleBackendRetry(STATE.page,{});}
+  else { $('#wrap').innerHTML='<div class="loader">B Item backend is busy. Retrying automatically...</div>'; $('#countText').textContent='B Item Rows: retrying...'; scheduleBackendRetry(STATE.page,{}); }
  }}
 function fillFacets(f){const area=$('#areaSel'), stage=$('#stageSel'); if(area.options.length<=1){(f.areas||[]).forEach(v=>area.add(new Option(v,v)));} if(stage.options.length<=1){(f.stages||[]).forEach(v=>stage.add(new Option(v,v)));}}
 function addOptionOnce(sel,v){v=clean(v); if(!v||v.toUpperCase()==='ALL')return; if(!Array.from(sel.options).some(o=>o.value===v)) sel.add(new Option(v,v));}
