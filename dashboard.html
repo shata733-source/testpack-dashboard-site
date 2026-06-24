@@ -5132,40 +5132,123 @@ function reinstatementTestPacksExportRows(){
   }))};
 }
 
-function bPunchItemsExportRows(){
-  const {rows,tpLookup}=bItemRawRowsForFiltered(getFiltered());
-  const out=[];
-  (rows||[]).forEach(r=>{
-    const tp=rowTPNo(r);
-    const tpInfo=tpLookup[tp]||{};
-    let type='';
-    let cleared=false;
-    if(isReturnBPunchRow(r)){
-      type='QC Return B Punch';
-      cleared=isReturnBPunchCleared(r,tpInfo);
-    }else if(isCnsBPunchSourceRow(r)){
-      type='CNS B Punch';
-      cleared=isBPunchCleared(r,tpInfo);
-    }else{
-      return;
+
+async function bPunchItemsExportRows(){
+  /* V43: Export option 5 only.
+     Same old sheet/file/columns, but source is D1 bitem_registry so the list is complete.
+     No dashboard render/filter logic is touched here. */
+  const headers=['B Punch Type','TP Number','Current TP Stage','Construction Stage','Status','Area','ISO','Ident Code','Punch Item','Punch Item Type','Material Type','Comments','Punch Cleared'];
+
+  const C=v=>(v===null||v===undefined)?'':String(v).replace(/\s+/g,' ').trim();
+  const U=v=>C(v).toUpperCase();
+  const pick=(obj,keys)=>{
+    obj=obj||{};
+    for(const k of keys){
+      if(obj[k]!==undefined&&obj[k]!==null&&C(obj[k])!=='')return obj[k];
     }
+    const ks=Object.keys(obj||{});
+    for(const k of keys){
+      const nk=U(k).replace(/[^A-Z0-9]/g,'');
+      const found=ks.find(x=>U(x).replace(/[^A-Z0-9]/g,'')===nk);
+      if(found&&obj[found]!==undefined&&obj[found]!==null&&C(obj[found])!=='')return obj[found];
+    }
+    return '';
+  };
+  const rawOf=r=>{
+    const raw=r&&r.row_json;
+    if(!raw)return{};
+    if(typeof raw==='object')return raw||{};
+    try{return JSON.parse(raw);}catch(e){return{};}
+  };
+  const authHeaders=()=>{
+    const h={'Accept':'application/json'};
+    try{
+      const t=localStorage.getItem('ccc_bitem_auth_token')||localStorage.getItem('ccc_auth_token')||localStorage.getItem('cccToken')||'';
+      if(t)h.Authorization='Bearer '+t;
+    }catch(e){}
+    return h;
+  };
+  const filterValue=(v)=>{
+    if(Array.isArray(v))return v.filter(x=>C(x)&&U(x)!=='ALL').join(',');
+    return (C(v)&&U(v)!=='ALL')?C(v):'';
+  };
+  const contractorValue=()=>{
+    let c='';
+    try{c=filterValue((typeof F!=='undefined'&&F?F:(window.F||{})).con);}catch(e){c='';}
+    if(!c)return 'ALL';
+    if(/JGC/i.test(c))return 'JGC Direct MP';
+    if(/CCC/i.test(c))return 'CCC';
+    return c;
+  };
+  const currentTpStageFromDashboard=(tp)=>{
+    try{
+      const key=U(tp);
+      const list=(typeof TP!=='undefined'&&Array.isArray(TP))?TP:(Array.isArray(window.TP)?window.TP:[]);
+      const r=list.find(x=>U((typeof tpOf==='function'?tpOf(x):'')||x.tp||x.TestPackNo||x['TP NUMBER']||x['TP Number']||x['Test Pack No'])===key);
+      return r&&typeof currentStageOfTp==='function'?currentStageOfTp(r):'';
+    }catch(e){return'';}
+  };
+  const exportDate=(v)=>{
+    if(v===null||v===undefined||C(v)===''||C(v)==='(blank)')return'';
+    if(typeof exportDateValue==='function'){
+      try{return exportDateValue(v);}catch(e){}
+    }
+    return C(v);
+  };
+
+  const params=new URLSearchParams();
+  params.set('limit','500');
+  params.set('include_removed','0');
+  const con=contractorValue();
+  if(con&&U(con)!=='ALL')params.set('contractor',con);
+  try{
+    const f=(typeof F!=='undefined'&&F?F:(window.F||{}));
+    const area=filterValue(f.area); if(area&&!area.includes(','))params.set('area',area);
+    const stage=filterValue(f.stage); if(stage&&!stage.includes(','))params.set('stage',stage);
+  }catch(e){}
+
+  const all=[];
+  let offset=0,total=null,guard=0;
+  while(guard++<300){
+    params.set('offset',String(offset));
+    params.set('_export_v43',String(Date.now()));
+    const res=await fetch('/api/bitem/state?'+params.toString(),{headers:authHeaders(),cache:'no-store'});
+    const txt=await res.text();
+    let j;
+    try{j=JSON.parse(txt);}catch(e){throw new Error('B Item export API returned non JSON: '+txt.slice(0,160));}
+    if(!res.ok||!j.ok)throw new Error((j&&j.error)?j.error:('HTTP '+res.status));
+    const rows=Array.isArray(j.rows)?j.rows:[];
+    all.push(...rows);
+    total=Number(j.total||all.length);
+    if(!rows.length||all.length>=total)break;
+    offset+=rows.length;
+  }
+
+  const out=[];
+  all.forEach(r=>{
+    const raw=rawOf(r);
+    const cat=U(r.punch_category||pick(raw,['Punch Category','Punch Category (A/B/C)','Punch Category#(lf)(A/B/C)','Punch Category\n(A/B/C)']));
+    if(cat&&cat!=='B')return;
+    const st=C(r.construction_stage||pick(raw,['Construction Stage','Stage','Current Stage']));
+    const tp=C(r.tp_no||pick(raw,['TP NUMBER','TP Number','TestPackNo','Test Pack No','TP No']));
+    const isRet=U(st).indexOf('QC PUNCH LIST RETURN')>=0;
+    const status=U(r.final_status)==='CLEARED'?'Cleared':'Open';
     out.push({
-      'B Punch Type':type,
+      'B Punch Type':isRet?'QC Return B Punch':'CNS B Punch',
       'TP Number':tp,
-      'Current TP Stage':currentStageOfTp(tpInfo)||'',
-      'Construction Stage':rowStage(r),
-      'Status':cleared?'Cleared':'Open',
-      'Area':pickAreaCode(rowValue(r,['Area','AREA'])),
-      'ISO':clean(rowValue(r,['ISO No.','ISO','Iso No'])),
-      'Ident Code':rowIdent(r),
-      'Punch Item':rowPunchItem(r),
-      'Punch Item Type':clean(rowValue(r,['Punch Item Type','PUNCH ITEM TYPE'])),
-      'Material Type':rowMaterial(r),
-      'Comments':rowComment(r),
-      'Punch Cleared':exportDateValue(rowValue(r,['Punch Cleared','Punched Cleared','Punch Clear Date','Cleared Date']))
+      'Current TP Stage':currentTpStageFromDashboard(tp),
+      'Construction Stage':st,
+      'Status':status,
+      'Area':C(r.area||pick(raw,['Area','AREA','Drawing Areas'])),
+      'ISO':C(r.iso_or_spool||pick(raw,['ISO No.','ISO No','ISO','Iso No','SpoolDwgNo','Spool Dwg No'])),
+      'Ident Code':C(pick(raw,['Ident. Code','Ident Code','Ident','Item Code'])),
+      'Punch Item':C(pick(raw,['Punch Item','PunchItem','Item','Tag No','Tag','Item No'])),
+      'Punch Item Type':C(pick(raw,['Punch Item Type','PUNCH ITEM TYPE'])),
+      'Material Type':C(r.material_type||pick(raw,['Material TYPE','Material Type','MATERIAL TYPE'])),
+      'Comments':C(r.comment_text||pick(raw,['Comments','Comment','COMMENT','Punch Description','PunchDesc'])),
+      'Punch Cleared':exportDate(r.final_cleared_date||pick(raw,['Punch Cleared','Punched Cleared','Punch Clear Date','Cleared Date']))
     });
   });
-  const headers=['B Punch Type','TP Number','Current TP Stage','Construction Stage','Status','Area','ISO','Ident Code','Punch Item','Punch Item Type','Material Type','Comments','Punch Cleared'];
   return {headers,rows:out};
 }
 
@@ -5236,7 +5319,8 @@ function exportRowsToWorkbook(sheetName,headers,rows,fileName){
     alert('Export failed: '+(err && err.message ? err.message : err));
   }
 }
-function downloadExcelList(){
+
+async function downloadExcelList(){
   const msg=[
     'Choose list to export:',
     '1 - Test Pack List',
@@ -5252,23 +5336,28 @@ function downloadExcelList(){
   const d=new Date();
   const stamp=`${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}`;
   let payload,title,file;
-  if(c==='1'||c.includes('test pack list')){
-    payload=filteredTpSummaryExportRows(); title='Test Pack List'; file=`Test_Pack_List_${stamp}.xlsx`;
-  }else if(c==='2'||c.includes('comments')){
-    payload=filteredTestPackCommentsExportRows(); title='Test Pack Comments'; file=`Test_Pack_Comments_${stamp}.xlsx`;
-  }else if(c==='3'||c.includes('qc')){
-    payload=qcAPunchListExportRows(); title='QC A Punch List'; file=`QC_A_Punch_List_${stamp}.xlsx`;
-  }else if(c==='4'||c.includes('cns')||c.includes('balance')){
-    payload=cnsABalanceDetailsExportRows(); title='CNS A Balance Details'; file=`CNS_A_Punch_Balance_Details_${stamp}.xlsx`;
-  }else if(c==='5'||c.includes('b punch')||c.includes('b item')){
-    payload=bPunchItemsExportRows(); title='B Punch Items Details'; file=`B_Punch_Items_Details_${stamp}.xlsx`;
-  }else if(c==='6'||c.includes('reinstatement')){
-    payload=reinstatementTestPacksExportRows(); title='Reinstatement Test Packs'; file=`Reinstatement_Test_Packs_${stamp}.xlsx`;
-  }else{
-    alert('Invalid selection. Please enter 1, 2, 3, 4, 5, or 6.');
-    return;
+  try{
+    if(c==='1'||c.includes('test pack list')){
+      payload=filteredTpSummaryExportRows(); title='Test Pack List'; file=`Test_Pack_List_${stamp}.xlsx`;
+    }else if(c==='2'||c.includes('comments')){
+      payload=filteredTestPackCommentsExportRows(); title='Test Pack Comments'; file=`Test_Pack_Comments_${stamp}.xlsx`;
+    }else if(c==='3'||c.includes('qc')){
+      payload=qcAPunchListExportRows(); title='QC A Punch List'; file=`QC_A_Punch_List_${stamp}.xlsx`;
+    }else if(c==='4'||c.includes('cns')||c.includes('balance')){
+      payload=cnsABalanceDetailsExportRows(); title='CNS A Balance Details'; file=`CNS_A_Punch_Balance_Details_${stamp}.xlsx`;
+    }else if(c==='5'||c.includes('b punch')||c.includes('b item')){
+      payload=await bPunchItemsExportRows(); title='B Punch Items Details'; file=`B_Punch_Items_Details_${stamp}.xlsx`;
+    }else if(c==='6'||c.includes('reinstatement')){
+      payload=reinstatementTestPacksExportRows(); title='Reinstatement Test Packs'; file=`Reinstatement_Test_Packs_${stamp}.xlsx`;
+    }else{
+      alert('Invalid selection. Please enter 1, 2, 3, 4, 5, or 6.');
+      return;
+    }
+    exportRowsToWorkbook(title,payload.headers,payload.rows,file);
+  }catch(err){
+    console.error('Export failed:',err);
+    alert('Export failed: '+(err&&err.message?err.message:err));
   }
-  exportRowsToWorkbook(title,payload.headers,payload.rows,file);
 }
 
 function downloadUpdatedHTML(){
@@ -9478,228 +9567,3 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 </script>
 
 
-<script>
-/* === V42 Export B Item from D1 + Dashboard Responsive Polish ===
-   - Export option 5 reads B Item Registry / D1 directly with paging, not embedded snapshot.
-   - Adds diagnostic columns to identify returned B items and whether each TP is in the displayed pending reinstatement table.
-   - Adds responsive CSS safeguards for dashboard zoom/window resize.
-*/
-(function(){
-  if (window.__V42_EXPORT_D1_AND_RESPONSIVE__) return;
-  window.__V42_EXPORT_D1_AND_RESPONSIVE__ = true;
-
-  function C(v){ return v == null ? '' : String(v).replace(/\s+/g,' ').trim(); }
-  function U(v){ return C(v).toUpperCase(); }
-  function pad2(n){ return String(n).padStart(2,'0'); }
-  function arr(v){
-    if (Array.isArray(v)) return v.filter(Boolean).filter(function(x){ return U(x) !== 'ALL'; });
-    if (!C(v) || U(v) === 'ALL') return [];
-    return [C(v)];
-  }
-  function getF(){ try { if (typeof F !== 'undefined' && F) return F; } catch(e){} return window.F || {}; }
-  function conValue(){
-    var c = C(getF().con || 'ALL');
-    if (!c || U(c) === 'ALL') return 'ALL';
-    if (/JGC/i.test(c)) return 'JGC Direct MP';
-    if (/CCC/i.test(c)) return 'CCC';
-    return c;
-  }
-  function tokenHeaders(){
-    var h = {'Accept':'application/json'};
-    try {
-      var t = localStorage.getItem('ccc_bitem_auth_token') || localStorage.getItem('ccc_auth_token') || localStorage.getItem('cccToken') || '';
-      if (t) h.Authorization = 'Bearer ' + t;
-    } catch(e) {}
-    return h;
-  }
-  function bitemStateParams(){
-    var f = getF();
-    var p = new URLSearchParams();
-    p.set('contractor', conValue());
-    var areas = arr(f.area); if (areas.length) p.set('area', areas.join(','));
-    var stages = arr(f.stage); if (stages.length) p.set('stage', stages.join(','));
-    return p;
-  }
-  function currentTpStage(tp){
-    try {
-      var list = (typeof TP !== 'undefined' && Array.isArray(TP)) ? TP : (window.TP || []);
-      var key = U(tp);
-      var r = list.find(function(x){ return U(x && x.tp) === key; });
-      return r && typeof currentStageOfTp === 'function' ? currentStageOfTp(r) : '';
-    } catch(e) { return ''; }
-  }
-  function pendingTpSet(){
-    try {
-      if (typeof reinstatementPendingRows !== 'function' || typeof getFiltered !== 'function') return new Set();
-      return new Set((reinstatementPendingRows(getFiltered()) || []).map(function(r){ return U(r && r.tp); }).filter(Boolean));
-    } catch(e) { return new Set(); }
-  }
-  function parseRowJson(row){
-    var raw = row && row.row_json;
-    if (!raw) return {};
-    if (typeof raw === 'object') return raw || {};
-    try { return JSON.parse(raw); } catch(e) { return {}; }
-  }
-  function pick(obj, keys){
-    obj = obj || {};
-    for (var i=0;i<keys.length;i++){
-      var k = keys[i];
-      if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k];
-      var found = Object.keys(obj).find(function(x){ return U(x) === U(k); });
-      if (found && obj[found] !== undefined && obj[found] !== null && obj[found] !== '') return obj[found];
-    }
-    return '';
-  }
-  function isReturnBucket(row){ return U(row && row.construction_stage).indexOf('QC PUNCH LIST RETURN') >= 0; }
-  function isBPunch(row){
-    var c = U(row && row.punch_category);
-    return c === 'B' || c.indexOf(' B') >= 0 || c.indexOf('B ') >= 0;
-  }
-  async function fetchAllBItemRowsFromD1(){
-    var p = bitemStateParams();
-    p.set('limit','500');
-    p.set('include_removed','0');
-    var all = [];
-    var offset = 0;
-    var total = null;
-    var guard = 0;
-    while (guard++ < 300) {
-      p.set('offset', String(offset));
-      p.set('_v42', String(Date.now()));
-      var res = await fetch('/api/bitem/state?' + p.toString(), { headers: tokenHeaders(), cache:'no-store' });
-      var txt = await res.text();
-      var j;
-      try { j = JSON.parse(txt); } catch(e) { throw new Error('B Item export API returned non JSON: ' + txt.slice(0,160)); }
-      if (!res.ok || !j.ok) throw new Error((j && j.error) ? j.error : ('HTTP ' + res.status));
-      var rows = Array.isArray(j.rows) ? j.rows : [];
-      all = all.concat(rows);
-      total = Number(j.total || all.length);
-      if (!rows.length || all.length >= total) break;
-      offset += rows.length;
-    }
-    return all;
-  }
-  async function bPunchItemsExportRowsFromD1(){
-    var rows = await fetchAllBItemRowsFromD1();
-    var pending = pendingTpSet();
-    var headers = [
-      'B Punch Bucket','B Item ID','Fingerprint','Effective Contractor','TP Number','Current TP Stage','In Pending Reinstatement Table',
-      'Construction Stage','Date','Area','ISO / Spool','Sheet No.','Punch Category','Material Type','Comment',
-      'Final Status','Final Cleared Date','User Cleared','User Cleared Date','Query Status','Query Cleared Date',
-      'Source Flag','Sync Note','Last Edited By','Last Edited At','Active'
-    ];
-    var out = rows.filter(isBPunch).map(function(r){
-      var raw = parseRowJson(r);
-      var tp = C(r.tp_no);
-      var bucket = isReturnBucket(r) ? 'QC Return B Punch' : 'CNS B Punch';
-      return {
-        'B Punch Bucket': bucket,
-        'B Item ID': C(r.bitem_id),
-        'Fingerprint': C(r.fingerprint),
-        'Effective Contractor': C(r.contractor),
-        'TP Number': tp,
-        'Current TP Stage': currentTpStage(tp),
-        'In Pending Reinstatement Table': pending.has(U(tp)) ? 'YES' : 'NO',
-        'Construction Stage': C(r.construction_stage),
-        'Date': C(pick(raw, ['Date','DATE','date'])),
-        'Area': C(r.area || pick(raw, ['Area','AREA'])),
-        'ISO / Spool': C(r.iso_or_spool || pick(raw, ['ISO No.','ISO','Iso No','Spool','ISO / Spool'])),
-        'Sheet No.': C(pick(raw, ['Sheet No.','Sheet No','Sheet','SHEET NO.'])),
-        'Punch Category': C(r.punch_category || pick(raw, ['Punch Category','Punch Category\n(A/B/C)','Punch Category\r\n(A/B/C)'])),
-        'Material Type': C(r.material_type || pick(raw, ['Material TYPE','Material Type','MATERIAL TYPE'])),
-        'Comment': C(r.comment_text || pick(raw, ['Comments','Comment','COMMENT'])),
-        'Final Status': C(r.final_status),
-        'Final Cleared Date': C(r.final_cleared_date),
-        'User Cleared': C(r.user_cleared_by || r.last_edited_by),
-        'User Cleared Date': C(r.user_cleared_date),
-        'Query Status': C(r.query_status),
-        'Query Cleared Date': C(r.query_cleared_date),
-        'Source Flag': C(r.source_flag),
-        'Sync Note': C(r.sync_note),
-        'Last Edited By': C(r.last_edited_by),
-        'Last Edited At': C(r.last_edited_at),
-        'Active': String(Number(r.active == null ? 1 : r.active))
-      };
-    });
-    return {headers:headers, rows:out};
-  }
-
-  window.bPunchItemsExportRowsFromD1 = bPunchItemsExportRowsFromD1;
-
-  // Override export menu. Options 1-4 and 6 stay exactly as before; option 5 now comes from D1.
-  try {
-    window.downloadExcelList = async function(){
-      var msg=[
-        'Choose list to export:',
-        '1 - Test Pack List',
-        '2 - Test Pack Comments',
-        '3 - QC A Punch List',
-        '4 - CNS A Punch Balance Classification DETAILS',
-        '5 - B Punch Items DETAILS - D1 Registry',
-        '6 - Reinstatement Test Packs'
-      ].join('\n');
-      var choice=prompt(msg,'1');
-      if(choice===null)return;
-      var c=String(choice).trim().toLowerCase();
-      var d=new Date();
-      var stamp=d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate())+'_'+pad2(d.getHours())+pad2(d.getMinutes());
-      var payload,title,file;
-      try{
-        if(c==='1'||c.includes('test pack list')){
-          payload=filteredTpSummaryExportRows(); title='Test Pack List'; file='Test_Pack_List_'+stamp+'.xlsx';
-        }else if(c==='2'||c.includes('comments')){
-          payload=filteredTestPackCommentsExportRows(); title='Test Pack Comments'; file='Test_Pack_Comments_'+stamp+'.xlsx';
-        }else if(c==='3'||c.includes('qc')){
-          payload=qcAPunchListExportRows(); title='QC A Punch List'; file='QC_A_Punch_List_'+stamp+'.xlsx';
-        }else if(c==='4'||c.includes('cns')||c.includes('balance')){
-          payload=cnsABalanceDetailsExportRows(); title='CNS A Balance Details'; file='CNS_A_Punch_Balance_Details_'+stamp+'.xlsx';
-        }else if(c==='5'||c.includes('b punch')||c.includes('b item')){
-          title='B Punch Items Details D1'; file='B_Punch_Items_Details_D1_'+stamp+'.xlsx';
-          payload=await bPunchItemsExportRowsFromD1();
-        }else if(c==='6'||c.includes('reinstatement')){
-          payload=reinstatementTestPacksExportRows(); title='Reinstatement Test Packs'; file='Reinstatement_Test_Packs_'+stamp+'.xlsx';
-        }else{
-          alert('Invalid selection. Please enter 1, 2, 3, 4, 5, or 6.');
-          return;
-        }
-        if(!payload || !payload.rows) throw new Error('Export payload is empty');
-        exportRowsToWorkbook(title,payload.headers,payload.rows,file);
-      }catch(err){
-        console.error('V42 Export failed:',err);
-        alert('Export failed: '+(err && err.message ? err.message : err));
-      }
-    };
-    try { downloadExcelList = window.downloadExcelList; } catch(e) {}
-  } catch(e) { console.warn('V42 export override failed:', e); }
-
-  // Add responsive safety CSS without changing dashboard logic.
-  var css = document.createElement('style');
-  css.id = 'v42-dashboard-responsive-css';
-  css.textContent = `
-    html,body{max-width:100%;}
-    .topbar{max-width:100vw;box-sizing:border-box;}
-    .layout{max-width:100vw;box-sizing:border-box;}
-    .content{min-width:0;max-width:100%;box-sizing:border-box;}
-    .tabs{max-width:100%;overflow-x:auto;overflow-y:hidden;white-space:nowrap;scrollbar-width:thin;}
-    .page{min-width:0;}
-    .card,.stage-card,.punch-box,.tbl-card{min-width:0;box-sizing:border-box;}
-    .tbl-wrap{max-width:100%;overflow:auto;}
-    @media (max-width: 1350px){
-      .topbar{height:auto;min-height:56px;flex-wrap:wrap;gap:8px;padding-top:8px;padding-bottom:8px;}
-      .live-status{margin-left:0;}
-      .kpi-grid{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))!important;}
-      .g2,.g3,.control-figures{grid-template-columns:1fr!important;}
-      .reinst-layout-v5{grid-template-columns:1fr!important;}
-      .reinst-side{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;}
-    }
-    @media (max-width: 900px){
-      .layout{display:block;overflow:auto;}
-      .sidebar{position:relative;width:auto;min-height:0;height:auto;border-right:0;border-bottom:1px solid var(--border);}
-      .content{padding:10px!important;}
-      .topbar .brand{min-width:180px;}
-      .reinst-flow{grid-template-columns:1fr!important;}
-    }
-  `;
-  document.head.appendChild(css);
-})();
-</script>
