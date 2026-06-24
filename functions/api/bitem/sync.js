@@ -176,7 +176,7 @@ async function handleSync(context) {
   const valid = [...byFingerprint.values()];
   skipped += duplicateFingerprintsInChunk;
 
-  const existingMap = await selectMap(context.env, `SELECT fingerprint, bitem_id, contractor, tp_no, construction_stage, punch_category, comment_text, material_type, iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, last_edited_by, last_edited_at, source_flag, sync_note, active FROM bitem_registry WHERE fingerprint`, valid.map(x => x.fp), 'fingerprint');
+  const existingMap = await selectMap(context.env, `SELECT fingerprint, bitem_id, contractor, tp_no, construction_stage, punch_category, comment_text, material_type, iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, user_cleared_by, last_edited_by, last_edited_at, source_flag, sync_note, active FROM bitem_registry WHERE fingerprint`, valid.map(x => x.fp), 'fingerprint');
   const newItems = valid.filter(x => !existingMap.get(x.fp));
   await nextIdsForNewRows(context.env, newItems);
 
@@ -204,13 +204,13 @@ async function handleSync(context) {
         INSERT INTO bitem_registry(
           bitem_id, fingerprint, contractor, tp_no, construction_stage, punch_category,
           comment_text, material_type, iso_or_spool, area, query_status, query_cleared_date,
-          final_status, final_cleared_date, user_cleared_date, source_flag, sync_note,
+          final_status, final_cleared_date, user_cleared_date, user_cleared_by, source_flag, sync_note,
           active, first_seen_at, last_seen_at, last_sync_id, row_json, updated_at
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,datetime('now'),datetime('now'),?,?,datetime('now'))
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,datetime('now'),datetime('now'),?,?,datetime('now'))
       `).bind(
         s(displayId), s(fp), s(contractor), s(tp), s(constructionStage(row)), s(punchCategory(row)),
         s(commentText(row)), s(materialType(row)), s(isoOrSpool(row)), s(rowArea(row)), s(qStatus), s(q.date || ''),
-        s(decision.finalStatus), s(decision.finalDate), '', s(decision.sourceFlag), s(decision.syncNote),
+        s(decision.finalStatus), s(decision.finalDate), '', '', s(decision.sourceFlag), s(decision.syncNote),
         s(syncId), s(rowJson)
       ));
       inserted++;

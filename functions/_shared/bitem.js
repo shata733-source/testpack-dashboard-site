@@ -83,11 +83,25 @@ export function isBItemRow(row) {
   return punchCategory(row) === 'B' && isAllowedBStage(constructionStage(row));
 }
 
+export const CCC_ALLOWED_AREAS = ['A211','A212','A222','A231','A232','A233'];
+
+export function hasAllowedCccAreaText(text) {
+  const s = norm(text);
+  return CCC_ALLOWED_AREAS.some(a => s.includes(a));
+}
+
+export function isGeneralAreaText(text) {
+  return norm(text) === 'GENERAL';
+}
+
 export function deriveContractor(row) {
-  // Business rule: Scope Arrangement defines CCC TPs. Any B Item row not marked/mapped as CCC is JGC Direct MP.
-  // Never return UNK because it creates wrong IDs and wrong dashboard filtering.
+  // Final CCC/JGC rule for B Items:
+  // A row may stay CCC only if it is marked CCC AND the B Item area/comment/ISO/TP text
+  // contains one of the approved CCC areas. Any CCC-marked item outside those six areas
+  // is treated as JGC Direct MP for ID generation, filtering, and dashboard counts.
   const v = norm(rowVal(row, ['CCC / JGC Direct MP', 'Contractor', 'Scope', 'Subcon']));
-  if (v.includes('CCC') && !v.includes('JGC')) return 'CCC';
+  const areaText = [rowArea(row), commentText(row), isoOrSpool(row), tpNo(row)].map(norm).join(' ');
+  if (v.includes('CCC') && !v.includes('JGC') && (isGeneralAreaText(rowArea(row)) || hasAllowedCccAreaText(areaText))) return 'CCC';
   return 'JGC';
 }
 
