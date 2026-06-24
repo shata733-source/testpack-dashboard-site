@@ -90,6 +90,10 @@ export function hasAllowedCccAreaText(text) {
   return CCC_ALLOWED_AREAS.some(a => s.includes(a));
 }
 
+export function isGeneralAreaText(text) {
+  return norm(text) === 'GENERAL';
+}
+
 export function deriveContractor(row) {
   // Final CCC/JGC rule for B Items:
   // A row may stay CCC only if it is marked CCC AND the B Item area/comment/ISO/TP text
@@ -97,7 +101,7 @@ export function deriveContractor(row) {
   // is treated as JGC Direct MP for ID generation, filtering, and dashboard counts.
   const v = norm(rowVal(row, ['CCC / JGC Direct MP', 'Contractor', 'Scope', 'Subcon']));
   const areaText = [rowArea(row), commentText(row), isoOrSpool(row), tpNo(row)].map(norm).join(' ');
-  if (v.includes('CCC') && !v.includes('JGC') && hasAllowedCccAreaText(areaText)) return 'CCC';
+  if (v.includes('CCC') && !v.includes('JGC') && (isGeneralAreaText(rowArea(row)) || hasAllowedCccAreaText(areaText))) return 'CCC';
   return 'JGC';
 }
 

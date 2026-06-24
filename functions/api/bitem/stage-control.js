@@ -6,6 +6,7 @@ function csvList(v) { return clean(v).split(',').map(x => clean(x)).filter(Boole
 
 const CCC_AREAS = ['A211','A212','A222','A231','A232','A233'];
 function hasAllowedArea(row) {
+  if (norm(row.area) === 'GENERAL') return true;
   const text = [row.area, row.comment_text, row.iso_or_spool, row.tp_no].map(norm).join(' ');
   return CCC_AREAS.some(a => new RegExp('(^|[^A-Z0-9])' + a + '([^A-Z0-9]|$)').test(text));
 }
@@ -136,7 +137,7 @@ export async function onRequestGet(context) {
       ok:true,
       source:'bitem_registry',
       method:'v35_stage_control_d1',
-      logic:'JGC remains JGC; CCC is CCC only inside A211/A212/A222/A231/A232/A233, otherwise JGC Direct MP',
+      logic:'JGC remains JGC; CCC is CCC only if Area=General or inside A211/A212/A222/A231/A232/A233, otherwise JGC Direct MP',
       filters:Object.fromEntries(url.searchParams.entries()),
       cns, ret,
       total:cns.total+ret.total,
@@ -144,7 +145,7 @@ export async function onRequestGet(context) {
       balance:cns.balance+ret.balance,
       party_counts: objToItems(partyCounts),
       material_counts: objToItems(materialCounts).slice(0,30),
-      by_tp: Object.values(byTp).sort((a,b)=>b.balance-a.balance || b.retBalance-a.retBalance || b.total-a.total)
+      by_tp: Object.values(byTp).sort((a,b)=>b.balance-a.balance || b.retBalance-a.retBalance || b.total-a.total).slice(0,500)
     });
   } catch (e) {
     return json({ ok:false, source:'bitem_registry', error:(e && e.message) ? e.message : String(e || 'Unknown error') }, 500);

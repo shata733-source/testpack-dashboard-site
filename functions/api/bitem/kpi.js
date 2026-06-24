@@ -10,6 +10,7 @@ function csvList(v) {
 }
 const CCC_AREAS = ['A211','A212','A222','A231','A232','A233'];
 function hasAllowedArea(row) {
+  if (norm(row.area) === 'GENERAL') return true;
   const text = [row.area, row.comment_text, row.iso_or_spool, row.tp_no].map(norm).join(' ');
   return CCC_AREAS.some(a => text.includes(a));
 }
@@ -101,7 +102,7 @@ export async function onRequestGet(context) {
       ok: true,
       source: 'bitem_registry',
       method: 'v30_js_safe_kpi',
-      logic: 'CCC only if CCC row contains A211/A212/A222/A231/A232/A233; otherwise JGC Direct MP',
+      logic: 'JGC remains JGC; CCC is CCC only if Area=General or inside A211/A212/A222/A231/A232/A233; otherwise JGC Direct MP',
       filters: Object.fromEntries(url.searchParams.entries()),
       total, cleared, balance,
       by_contractor: by,

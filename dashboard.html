@@ -5132,123 +5132,40 @@ function reinstatementTestPacksExportRows(){
   }))};
 }
 
-
-async function bPunchItemsExportRows(){
-  /* V43: Export option 5 only.
-     Same old sheet/file/columns, but source is D1 bitem_registry so the list is complete.
-     No dashboard render/filter logic is touched here. */
-  const headers=['B Punch Type','TP Number','Current TP Stage','Construction Stage','Status','Area','ISO','Ident Code','Punch Item','Punch Item Type','Material Type','Comments','Punch Cleared'];
-
-  const C=v=>(v===null||v===undefined)?'':String(v).replace(/\s+/g,' ').trim();
-  const U=v=>C(v).toUpperCase();
-  const pick=(obj,keys)=>{
-    obj=obj||{};
-    for(const k of keys){
-      if(obj[k]!==undefined&&obj[k]!==null&&C(obj[k])!=='')return obj[k];
-    }
-    const ks=Object.keys(obj||{});
-    for(const k of keys){
-      const nk=U(k).replace(/[^A-Z0-9]/g,'');
-      const found=ks.find(x=>U(x).replace(/[^A-Z0-9]/g,'')===nk);
-      if(found&&obj[found]!==undefined&&obj[found]!==null&&C(obj[found])!=='')return obj[found];
-    }
-    return '';
-  };
-  const rawOf=r=>{
-    const raw=r&&r.row_json;
-    if(!raw)return{};
-    if(typeof raw==='object')return raw||{};
-    try{return JSON.parse(raw);}catch(e){return{};}
-  };
-  const authHeaders=()=>{
-    const h={'Accept':'application/json'};
-    try{
-      const t=localStorage.getItem('ccc_bitem_auth_token')||localStorage.getItem('ccc_auth_token')||localStorage.getItem('cccToken')||'';
-      if(t)h.Authorization='Bearer '+t;
-    }catch(e){}
-    return h;
-  };
-  const filterValue=(v)=>{
-    if(Array.isArray(v))return v.filter(x=>C(x)&&U(x)!=='ALL').join(',');
-    return (C(v)&&U(v)!=='ALL')?C(v):'';
-  };
-  const contractorValue=()=>{
-    let c='';
-    try{c=filterValue((typeof F!=='undefined'&&F?F:(window.F||{})).con);}catch(e){c='';}
-    if(!c)return 'ALL';
-    if(/JGC/i.test(c))return 'JGC Direct MP';
-    if(/CCC/i.test(c))return 'CCC';
-    return c;
-  };
-  const currentTpStageFromDashboard=(tp)=>{
-    try{
-      const key=U(tp);
-      const list=(typeof TP!=='undefined'&&Array.isArray(TP))?TP:(Array.isArray(window.TP)?window.TP:[]);
-      const r=list.find(x=>U((typeof tpOf==='function'?tpOf(x):'')||x.tp||x.TestPackNo||x['TP NUMBER']||x['TP Number']||x['Test Pack No'])===key);
-      return r&&typeof currentStageOfTp==='function'?currentStageOfTp(r):'';
-    }catch(e){return'';}
-  };
-  const exportDate=(v)=>{
-    if(v===null||v===undefined||C(v)===''||C(v)==='(blank)')return'';
-    if(typeof exportDateValue==='function'){
-      try{return exportDateValue(v);}catch(e){}
-    }
-    return C(v);
-  };
-
-  const params=new URLSearchParams();
-  params.set('limit','500');
-  params.set('include_removed','0');
-  const con=contractorValue();
-  if(con&&U(con)!=='ALL')params.set('contractor',con);
-  try{
-    const f=(typeof F!=='undefined'&&F?F:(window.F||{}));
-    const area=filterValue(f.area); if(area&&!area.includes(','))params.set('area',area);
-    const stage=filterValue(f.stage); if(stage&&!stage.includes(','))params.set('stage',stage);
-  }catch(e){}
-
-  const all=[];
-  let offset=0,total=null,guard=0;
-  while(guard++<300){
-    params.set('offset',String(offset));
-    params.set('_export_v43',String(Date.now()));
-    const res=await fetch('/api/bitem/state?'+params.toString(),{headers:authHeaders(),cache:'no-store'});
-    const txt=await res.text();
-    let j;
-    try{j=JSON.parse(txt);}catch(e){throw new Error('B Item export API returned non JSON: '+txt.slice(0,160));}
-    if(!res.ok||!j.ok)throw new Error((j&&j.error)?j.error:('HTTP '+res.status));
-    const rows=Array.isArray(j.rows)?j.rows:[];
-    all.push(...rows);
-    total=Number(j.total||all.length);
-    if(!rows.length||all.length>=total)break;
-    offset+=rows.length;
-  }
-
+function bPunchItemsExportRows(){
+  const {rows,tpLookup}=bItemRawRowsForFiltered(getFiltered());
   const out=[];
-  all.forEach(r=>{
-    const raw=rawOf(r);
-    const cat=U(r.punch_category||pick(raw,['Punch Category','Punch Category (A/B/C)','Punch Category#(lf)(A/B/C)','Punch Category\n(A/B/C)']));
-    if(cat&&cat!=='B')return;
-    const st=C(r.construction_stage||pick(raw,['Construction Stage','Stage','Current Stage']));
-    const tp=C(r.tp_no||pick(raw,['TP NUMBER','TP Number','TestPackNo','Test Pack No','TP No']));
-    const isRet=U(st).indexOf('QC PUNCH LIST RETURN')>=0;
-    const status=U(r.final_status)==='CLEARED'?'Cleared':'Open';
+  (rows||[]).forEach(r=>{
+    const tp=rowTPNo(r);
+    const tpInfo=tpLookup[tp]||{};
+    let type='';
+    let cleared=false;
+    if(isReturnBPunchRow(r)){
+      type='QC Return B Punch';
+      cleared=isReturnBPunchCleared(r,tpInfo);
+    }else if(isCnsBPunchSourceRow(r)){
+      type='CNS B Punch';
+      cleared=isBPunchCleared(r,tpInfo);
+    }else{
+      return;
+    }
     out.push({
-      'B Punch Type':isRet?'QC Return B Punch':'CNS B Punch',
+      'B Punch Type':type,
       'TP Number':tp,
-      'Current TP Stage':currentTpStageFromDashboard(tp),
-      'Construction Stage':st,
-      'Status':status,
-      'Area':C(r.area||pick(raw,['Area','AREA','Drawing Areas'])),
-      'ISO':C(r.iso_or_spool||pick(raw,['ISO No.','ISO No','ISO','Iso No','SpoolDwgNo','Spool Dwg No'])),
-      'Ident Code':C(pick(raw,['Ident. Code','Ident Code','Ident','Item Code'])),
-      'Punch Item':C(pick(raw,['Punch Item','PunchItem','Item','Tag No','Tag','Item No'])),
-      'Punch Item Type':C(pick(raw,['Punch Item Type','PUNCH ITEM TYPE'])),
-      'Material Type':C(r.material_type||pick(raw,['Material TYPE','Material Type','MATERIAL TYPE'])),
-      'Comments':C(r.comment_text||pick(raw,['Comments','Comment','COMMENT','Punch Description','PunchDesc'])),
-      'Punch Cleared':exportDate(r.final_cleared_date||pick(raw,['Punch Cleared','Punched Cleared','Punch Clear Date','Cleared Date']))
+      'Current TP Stage':currentStageOfTp(tpInfo)||'',
+      'Construction Stage':rowStage(r),
+      'Status':cleared?'Cleared':'Open',
+      'Area':pickAreaCode(rowValue(r,['Area','AREA'])),
+      'ISO':clean(rowValue(r,['ISO No.','ISO','Iso No'])),
+      'Ident Code':rowIdent(r),
+      'Punch Item':rowPunchItem(r),
+      'Punch Item Type':clean(rowValue(r,['Punch Item Type','PUNCH ITEM TYPE'])),
+      'Material Type':rowMaterial(r),
+      'Comments':rowComment(r),
+      'Punch Cleared':exportDateValue(rowValue(r,['Punch Cleared','Punched Cleared','Punch Clear Date','Cleared Date']))
     });
   });
+  const headers=['B Punch Type','TP Number','Current TP Stage','Construction Stage','Status','Area','ISO','Ident Code','Punch Item','Punch Item Type','Material Type','Comments','Punch Cleared'];
   return {headers,rows:out};
 }
 
@@ -5319,8 +5236,7 @@ function exportRowsToWorkbook(sheetName,headers,rows,fileName){
     alert('Export failed: '+(err && err.message ? err.message : err));
   }
 }
-
-async function downloadExcelList(){
+function downloadExcelList(){
   const msg=[
     'Choose list to export:',
     '1 - Test Pack List',
@@ -5336,28 +5252,23 @@ async function downloadExcelList(){
   const d=new Date();
   const stamp=`${d.getFullYear()}${pad2(d.getMonth()+1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}`;
   let payload,title,file;
-  try{
-    if(c==='1'||c.includes('test pack list')){
-      payload=filteredTpSummaryExportRows(); title='Test Pack List'; file=`Test_Pack_List_${stamp}.xlsx`;
-    }else if(c==='2'||c.includes('comments')){
-      payload=filteredTestPackCommentsExportRows(); title='Test Pack Comments'; file=`Test_Pack_Comments_${stamp}.xlsx`;
-    }else if(c==='3'||c.includes('qc')){
-      payload=qcAPunchListExportRows(); title='QC A Punch List'; file=`QC_A_Punch_List_${stamp}.xlsx`;
-    }else if(c==='4'||c.includes('cns')||c.includes('balance')){
-      payload=cnsABalanceDetailsExportRows(); title='CNS A Balance Details'; file=`CNS_A_Punch_Balance_Details_${stamp}.xlsx`;
-    }else if(c==='5'||c.includes('b punch')||c.includes('b item')){
-      payload=await bPunchItemsExportRows(); title='B Punch Items Details'; file=`B_Punch_Items_Details_${stamp}.xlsx`;
-    }else if(c==='6'||c.includes('reinstatement')){
-      payload=reinstatementTestPacksExportRows(); title='Reinstatement Test Packs'; file=`Reinstatement_Test_Packs_${stamp}.xlsx`;
-    }else{
-      alert('Invalid selection. Please enter 1, 2, 3, 4, 5, or 6.');
-      return;
-    }
-    exportRowsToWorkbook(title,payload.headers,payload.rows,file);
-  }catch(err){
-    console.error('Export failed:',err);
-    alert('Export failed: '+(err&&err.message?err.message:err));
+  if(c==='1'||c.includes('test pack list')){
+    payload=filteredTpSummaryExportRows(); title='Test Pack List'; file=`Test_Pack_List_${stamp}.xlsx`;
+  }else if(c==='2'||c.includes('comments')){
+    payload=filteredTestPackCommentsExportRows(); title='Test Pack Comments'; file=`Test_Pack_Comments_${stamp}.xlsx`;
+  }else if(c==='3'||c.includes('qc')){
+    payload=qcAPunchListExportRows(); title='QC A Punch List'; file=`QC_A_Punch_List_${stamp}.xlsx`;
+  }else if(c==='4'||c.includes('cns')||c.includes('balance')){
+    payload=cnsABalanceDetailsExportRows(); title='CNS A Balance Details'; file=`CNS_A_Punch_Balance_Details_${stamp}.xlsx`;
+  }else if(c==='5'||c.includes('b punch')||c.includes('b item')){
+    payload=bPunchItemsExportRows(); title='B Punch Items Details'; file=`B_Punch_Items_Details_${stamp}.xlsx`;
+  }else if(c==='6'||c.includes('reinstatement')){
+    payload=reinstatementTestPacksExportRows(); title='Reinstatement Test Packs'; file=`Reinstatement_Test_Packs_${stamp}.xlsx`;
+  }else{
+    alert('Invalid selection. Please enter 1, 2, 3, 4, 5, or 6.');
+    return;
   }
+  exportRowsToWorkbook(title,payload.headers,payload.rows,file);
 }
 
 function downloadUpdatedHTML(){
@@ -9233,10 +9144,43 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     var txt = U(box.textContent || '');
     return /CNS\s+B\s+PUNCH/.test(txt) && /BALANCE:\s*0/.test(txt) && /CLEARED:\s*0/.test(txt);
   }
+
+  function pendingBaseRowsForRetCard(){
+    var current = [];
+    try { current = (typeof getFiltered === 'function') ? (getFiltered() || []) : []; } catch(e) { current = []; }
+    try {
+      if (typeof window.reinstatementPendingRows === 'function') return window.reinstatementPendingRows(current) || [];
+    } catch(e) {}
+    try {
+      if (typeof reinstatementPendingRows === 'function') return reinstatementPendingRows(current) || [];
+    } catch(e) {}
+    return [];
+  }
+  function scopedReturnPunchTotals(data){
+    data = data || {};
+    var base = pendingBaseRowsForRetCard();
+    if (!base.length || !Array.isArray(data.by_tp)) return data.ret || {};
+    var map = {};
+    data.by_tp.forEach(function(x){
+      var tp = U(x.tp || x.tp_no || x.test_pack || '');
+      if (tp) map[tp] = x;
+    });
+    var total = 0, cleared = 0;
+    base.forEach(function(r){
+      var x = map[U(r.tp || r.tp_no || '')] || {};
+      var rt = Number(x.retTotal != null ? x.retTotal : (x.ret_total != null ? x.ret_total : (r.retTotal || 0))) || 0;
+      var rc = Number(x.retCleared != null ? x.retCleared : (x.ret_cleared != null ? x.ret_cleared : (r.retCleared || 0))) || 0;
+      total += rt; cleared += rc;
+    });
+    return { total: total, cleared: cleared, balance: Math.max(total - cleared, 0), source: 'pending_reinstatement_scope' };
+  }
   function applyStageData(data){
     if (!data || !data.ok || !isStageControlVisible()) return false;
     var box = document.getElementById('bPunchControlBoxes');
-    if (box) box.innerHTML = controlBox('CNS B Punch', data.cns || {}, 'var(--orange)') + controlBox('QC Return B Punch', data.ret || {}, 'var(--accent2)');
+    if (box) {
+      var retScoped = scopedReturnPunchTotals(data);
+      box.innerHTML = controlBox('CNS B Punch', data.cns || {}, 'var(--orange)') + controlBox('QC Return B Punch', retScoped || data.ret || {}, 'var(--accent2)');
+    }
     var party = document.getElementById('bPunchTypeChart');
     if (party) party.innerHTML = miniBars(data.party_counts || [['CNS',0],['ENG',0]], 'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))');
     var mat = document.getElementById('bPunchMatChart');
