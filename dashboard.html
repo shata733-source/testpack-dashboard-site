@@ -9153,3 +9153,48 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', bootWarm); else bootWarm();
 })();
 </script>
+
+<script id="v59-dashboard-bitem-state-firewall">
+/* V59 — Dashboard must never request the heavy B Item table endpoint.
+   B Item Control owns table paging. Dashboard owns only KPI and stage-control aggregates.
+   This prevents /api/bitem/state?limit=50000 from exhausting D1 and breaking B Item/Login JSON responses after navigation. */
+(function(){
+  if (window.__V59_DASHBOARD_BITEM_STATE_FIREWALL__) return;
+  window.__V59_DASHBOARD_BITEM_STATE_FIREWALL__ = true;
+
+  function isDashboard(){
+    try { return /dashboard/i.test(location.pathname + location.hash); } catch(e) { return true; }
+  }
+  function isHeavyBitemStateUrl(u){
+    try {
+      var url = String(u || '');
+      if (!/\/api\/bitem\/state/i.test(url)) return false;
+      return /limit=50000/i.test(url) || /include_removed=1/i.test(url);
+    } catch(e) { return false; }
+  }
+  function jsonResponse(obj){
+    return new Response(JSON.stringify(obj), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'x-v59-bitem-state-firewall': '1' } });
+  }
+
+  // Stop old dashboard overlays from loading the full B Item registry. Final dashboard B numbers come from /api/bitem/kpi and /api/bitem/stage-control only.
+  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  if (nativeFetch && !nativeFetch.__v59Wrapped) {
+    var wrapped = function(input, init){
+      var raw = (typeof input === 'string') ? input : (input && input.url) || '';
+      if (isDashboard() && isHeavyBitemStateUrl(raw)) {
+        return Promise.resolve(jsonResponse({ ok: true, rows: [], total: 0, skipped: true, source: 'v59_dashboard_bitem_state_firewall' }));
+      }
+      return nativeFetch(input, init);
+    };
+    wrapped.__v59Wrapped = true;
+    window.fetch = wrapped;
+  }
+
+  // If old inline scripts call these helpers, make them harmless on dashboard pages.
+  window.__V46_BITEM_D1_REQUEST_CONTROLLER__ = true;
+  window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__ = true;
+  window.bitemLoadSystemState = async function(){
+    return { ok: true, rows: [], total: 0, skipped: true, source: 'v59_dashboard_no_full_state' };
+  };
+})();
+</script>
