@@ -94,8 +94,6 @@ async function facets(env) {
 export async function onRequestGet(context) {
   try {
     const dbError = assertDB(context.env); if (dbError) return dbError;
-    await ensureEditTables(context.env);
-
     const url = new URL(context.request.url);
     if (url.searchParams.get('op') === 'edit') {
       return await handleSave(context, {
@@ -115,31 +113,45 @@ export async function onRequestGet(context) {
     const offset = Math.max(Number(url.searchParams.get('offset') || 0), 0);
     const { whereSql, binds } = whereFromUrl(url);
 
-    const count = await context.env.DB.prepare(`SELECT COUNT(*) AS n FROM bitem_registry ${whereSql}`).bind(...binds).first();
-    const rows = await context.env.DB.prepare(`
+    // V51: keep the state endpoint lightweight.
+    // Do NOT run CREATE/ALTER checks on every table refresh; those schema checks are done by sync/save.
+    // Also do not calculate page KPIs/facets unless requested by the page. This avoids intermittent 503s from heavy repeated D1 work.
+    const wantFacets = url.searchParams.get('facets') !== '0';
+    const wantKpi = url.searchParams.get('kpi') === '1';
+
+    const countPromise = context.env.DB.prepare(`SELECT COUNT(*) AS n FROM bitem_registry ${whereSql}`).bind(...binds).first();
+    const rowsPromise = context.env.DB.prepare(`
       SELECT bitem_id, fingerprint, ${EFFECTIVE_CONTRACTOR_SQL} AS contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
              iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date,
              user_cleared_date, user_cleared_by, last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
       FROM bitem_registry
       ${whereSql}
-      ORDER BY active DESC, tp_no, bitem_id, fingerprint
+      ORDER BY tp_no, bitem_id, fingerprint
       LIMIT ? OFFSET ?
     `).bind(...binds, limit, offset).all();
 
-    const kpi = await context.env.DB.prepare(`
-      SELECT
-        SUM(CASE WHEN active=1 THEN 1 ELSE 0 END) AS active_total,
-        SUM(CASE WHEN active=1 AND final_status='CLEARED' THEN 1 ELSE 0 END) AS active_cleared,
-        SUM(CASE WHEN active=1 AND (final_status IS NULL OR final_status='' OR final_status<>'CLEARED') THEN 1 ELSE 0 END) AS active_balance,
-        SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS removed_total,
-        SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='CCC' THEN 1 ELSE 0 END) AS ccc_total,
-        SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='CCC' AND final_status='CLEARED' THEN 1 ELSE 0 END) AS ccc_cleared,
-        SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP' THEN 1 ELSE 0 END) AS jgc_total,
-        SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP' AND final_status='CLEARED' THEN 1 ELSE 0 END) AS jgc_cleared
-      FROM bitem_registry
-    `).first();
+    const [count, rows, facetData, kpi] = await Promise.all([
+      countPromise,
+      rowsPromise,
+      wantFacets ? facets(context.env) : Promise.resolve(null),
+      wantKpi ? context.env.DB.prepare(`
+        SELECT
+          SUM(CASE WHEN active=1 THEN 1 ELSE 0 END) AS active_total,
+          SUM(CASE WHEN active=1 AND final_status='CLEARED' THEN 1 ELSE 0 END) AS active_cleared,
+          SUM(CASE WHEN active=1 AND (final_status IS NULL OR final_status='' OR final_status<>'CLEARED') THEN 1 ELSE 0 END) AS active_balance,
+          SUM(CASE WHEN active=0 THEN 1 ELSE 0 END) AS removed_total,
+          SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='CCC' THEN 1 ELSE 0 END) AS ccc_total,
+          SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='CCC' AND final_status='CLEARED' THEN 1 ELSE 0 END) AS ccc_cleared,
+          SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP' THEN 1 ELSE 0 END) AS jgc_total,
+          SUM(CASE WHEN active=1 AND ${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP' AND final_status='CLEARED' THEN 1 ELSE 0 END) AS jgc_cleared
+        FROM bitem_registry
+      `).first() : Promise.resolve(null)
+    ]);
 
-    return json({ ok: true, total: count?.n || 0, limit, offset, kpi, facets: await facets(context.env), rows: rows.results || [] });
+    const out = { ok: true, total: count?.n || 0, limit, offset, rows: rows.results || [] };
+    if (facetData) out.facets = facetData;
+    if (kpi) out.kpi = kpi;
+    return json(out);
   } catch (e) {
     console.error('BITEM_STATE_GET_ERROR', e && (e.stack || e.message || e));
     return json({ ok:false, error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);

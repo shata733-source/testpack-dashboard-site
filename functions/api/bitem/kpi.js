@@ -8,55 +8,61 @@ function norm(v) { return clean(v).toUpperCase(); }
 function csvList(v) {
   return clean(v).split(',').map(x => clean(x)).filter(Boolean).filter(x => x.toUpperCase() !== 'ALL');
 }
-const CCC_AREAS = ['A211','A212','A222','A231','A232','A233'];
-function hasAllowedArea(row) {
-  if (norm(row.area) === 'GENERAL') return true;
-  const text = [row.area, row.comment_text, row.iso_or_spool, row.tp_no].map(norm).join(' ');
-  return CCC_AREAS.some(a => text.includes(a));
-}
-function effectiveContractor(row) {
-  const c = norm(row.contractor);
-  return (c.includes('CCC') && !c.includes('JGC') && hasAllowedArea(row)) ? 'CCC' : 'JGC Direct MP';
-}
-function isCleared(row) { return norm(row.final_status) === 'CLEARED'; }
-function hasColumn(cols, name) { return cols.has(String(name).toLowerCase()); }
-function colExpr(cols, name, alias) {
-  return hasColumn(cols, name) ? `${name} AS ${alias || name}` : `'' AS ${alias || name}`;
-}
-async function tableColumns(env, table) {
-  const r = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
-  return new Set((r.results || []).map(x => String(x.name || '').toLowerCase()).filter(Boolean));
-}
-function matchesFilters(row, url) {
+
+const CCC_ALLOWED_SQL = [
+  "UPPER(COALESCE(area,'')) LIKE '%A211%'","UPPER(COALESCE(comment_text,'')) LIKE '%A211%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A211%'","UPPER(COALESCE(tp_no,'')) LIKE '%A211%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A212%'","UPPER(COALESCE(comment_text,'')) LIKE '%A212%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A212%'","UPPER(COALESCE(tp_no,'')) LIKE '%A212%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A222%'","UPPER(COALESCE(comment_text,'')) LIKE '%A222%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A222%'","UPPER(COALESCE(tp_no,'')) LIKE '%A222%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A231%'","UPPER(COALESCE(comment_text,'')) LIKE '%A231%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A231%'","UPPER(COALESCE(tp_no,'')) LIKE '%A231%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A232%'","UPPER(COALESCE(comment_text,'')) LIKE '%A232%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A232%'","UPPER(COALESCE(tp_no,'')) LIKE '%A232%'",
+  "UPPER(COALESCE(area,'')) LIKE '%A233%'","UPPER(COALESCE(comment_text,'')) LIKE '%A233%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A233%'","UPPER(COALESCE(tp_no,'')) LIKE '%A233%'",
+  "UPPER(TRIM(COALESCE(area,'')))='GENERAL'"
+].join(' OR ');
+
+const EFFECTIVE_CONTRACTOR_SQL = `CASE WHEN UPPER(COALESCE(contractor,'')) LIKE '%JGC%' THEN 'JGC Direct MP' WHEN UPPER(COALESCE(contractor,'')) LIKE '%CCC%' AND (${CCC_ALLOWED_SQL}) THEN 'CCC' ELSE 'JGC Direct MP' END`;
+
+function whereFromUrl(url) {
   const contractor = clean(url.searchParams.get('contractor') || 'ALL');
   const finalStatus = clean(url.searchParams.get('final_status') || 'ALL');
   const areas = csvList(url.searchParams.get('area') || '');
   const stages = csvList(url.searchParams.get('stage') || '');
   const q = norm(url.searchParams.get('q') || '');
+  const where = ['active=1'];
+  const binds = [];
 
   if (contractor && contractor.toUpperCase() !== 'ALL') {
-    const eff = effectiveContractor(row);
-    if (/JGC/i.test(contractor)) { if (eff !== 'JGC Direct MP') return false; }
-    else if (/CCC/i.test(contractor)) { if (eff !== 'CCC') return false; }
+    if (/JGC/i.test(contractor)) where.push(`${EFFECTIVE_CONTRACTOR_SQL}='JGC Direct MP'`);
+    else if (/CCC/i.test(contractor)) where.push(`${EFFECTIVE_CONTRACTOR_SQL}='CCC'`);
   }
+
   if (areas.length) {
-    const a = norm(row.area);
-    if (!areas.some(x => a.includes(norm(x)))) return false;
+    where.push('(' + areas.map(() => "UPPER(COALESCE(area,'')) LIKE ?").join(' OR ') + ')');
+    areas.forEach(a => binds.push('%' + norm(a) + '%'));
   }
+
   if (stages.length) {
-    const s = norm(row.construction_stage);
-    if (!stages.some(x => s === norm(x))) return false;
+    where.push('(' + stages.map(() => "UPPER(COALESCE(construction_stage,'')) = ?").join(' OR ') + ')');
+    stages.forEach(s => binds.push(norm(s)));
   }
+
   if (finalStatus && finalStatus.toUpperCase() !== 'ALL') {
-    const cleared = isCleared(row);
-    if (finalStatus.toUpperCase() === 'CLEARED' && !cleared) return false;
-    if ((finalStatus.toUpperCase() === 'NOT CLEARED' || finalStatus.toUpperCase() === 'OPEN') && cleared) return false;
+    if (finalStatus.toUpperCase() === 'CLEARED') where.push("UPPER(COALESCE(final_status,''))='CLEARED'");
+    else where.push("(final_status IS NULL OR final_status='' OR UPPER(final_status)<>'CLEARED')");
   }
+
   if (q) {
-    const blob = [row.bitem_id, row.tp_no, row.construction_stage, row.comment_text, row.material_type, row.iso_or_spool, row.area, row.user_cleared_by, row.final_status].map(norm).join(' ');
-    if (!blob.includes(q)) return false;
+    const like = '%' + q + '%';
+    where.push(`(
+      UPPER(COALESCE(bitem_id,'')) LIKE ? OR UPPER(COALESCE(tp_no,'')) LIKE ? OR
+      UPPER(COALESCE(construction_stage,'')) LIKE ? OR UPPER(COALESCE(comment_text,'')) LIKE ? OR
+      UPPER(COALESCE(material_type,'')) LIKE ? OR UPPER(COALESCE(iso_or_spool,'')) LIKE ? OR
+      UPPER(COALESCE(area,'')) LIKE ? OR UPPER(COALESCE(user_cleared_by,'')) LIKE ? OR
+      UPPER(COALESCE(final_status,'')) LIKE ?
+    )`);
+    binds.push(like, like, like, like, like, like, like, like, like);
   }
-  return true;
+
+  return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', binds };
 }
 
 export async function onRequestGet(context) {
@@ -66,42 +72,33 @@ export async function onRequestGet(context) {
     if (auth.error) return auth.error;
 
     const url = new URL(context.request.url);
-    const cols = await tableColumns(context.env, 'bitem_registry');
-    if (!cols.size) return json({ ok:false, error:'bitem_registry table was not found or has no columns' }, 500);
+    const { whereSql, binds } = whereFromUrl(url);
 
-    const select = [
-      colExpr(cols, 'bitem_id', 'bitem_id'),
-      colExpr(cols, 'contractor', 'contractor'),
-      colExpr(cols, 'tp_no', 'tp_no'),
-      colExpr(cols, 'construction_stage', 'construction_stage'),
-      colExpr(cols, 'comment_text', 'comment_text'),
-      colExpr(cols, 'material_type', 'material_type'),
-      colExpr(cols, 'iso_or_spool', 'iso_or_spool'),
-      colExpr(cols, 'area', 'area'),
-      colExpr(cols, 'final_status', 'final_status'),
-      colExpr(cols, 'user_cleared_by', 'user_cleared_by'),
-      hasColumn(cols, 'active') ? 'active AS active' : '1 AS active'
-    ].join(', ');
-
-    // Fetch only lightweight columns. 12-13k rows is safe here and avoids fragile SQL expressions / schema mismatch.
-    const rs = await context.env.DB.prepare(`SELECT ${select} FROM bitem_registry`).all();
-    const rows = (rs.results || []).filter(r => Number(r.active ?? 1) === 1).filter(r => matchesFilters(r, url));
+    const rs = await context.env.DB.prepare(`
+      SELECT ${EFFECTIVE_CONTRACTOR_SQL} AS contractor,
+             COUNT(*) AS total,
+             SUM(CASE WHEN UPPER(COALESCE(final_status,''))='CLEARED' THEN 1 ELSE 0 END) AS cleared
+      FROM bitem_registry
+      ${whereSql}
+      GROUP BY ${EFFECTIVE_CONTRACTOR_SQL}
+    `).bind(...binds).all();
 
     const by = {};
-    let total = 0, cleared = 0, balance = 0;
-    for (const r of rows) {
-      const c = effectiveContractor(r);
-      if (!by[c]) by[c] = { total: 0, cleared: 0, balance: 0 };
-      by[c].total++;
-      total++;
-      if (isCleared(r)) { by[c].cleared++; cleared++; }
-      else { by[c].balance++; balance++; }
+    let total = 0, cleared = 0;
+    for (const r of (rs.results || [])) {
+      const c = clean(r.contractor) || 'JGC Direct MP';
+      const t = Number(r.total || 0);
+      const cl = Number(r.cleared || 0);
+      by[c] = { total: t, cleared: cl, balance: Math.max(t - cl, 0) };
+      total += t;
+      cleared += cl;
     }
 
+    const balance = Math.max(total - cleared, 0);
     return json({
       ok: true,
       source: 'bitem_registry',
-      method: 'v30_js_safe_kpi',
+      method: 'v51_sql_safe_kpi',
       logic: 'JGC remains JGC; CCC is CCC only if Area=General or inside A211/A212/A222/A231/A232/A233; otherwise JGC Direct MP',
       filters: Object.fromEntries(url.searchParams.entries()),
       total, cleared, balance,

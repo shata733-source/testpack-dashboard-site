@@ -84,7 +84,7 @@ body.light .grid td:first-child{background:#fff}body.light .grid tr:nth-child(ev
 <script>
 (function(){
 'use strict';
-const STATE={rows:[],total:0,offset:0,limit:100,page:1,filters:{contractor:'ALL',area:'ALL',stage:'ALL',status:'ALL',q:''},editing:null,user:null,canEdit:false};
+const STATE={rows:[],total:0,offset:0,limit:100,page:1,filters:{contractor:'ALL',area:'ALL',stage:'ALL',status:'ALL',q:''},editing:null,user:null,canEdit:false,facetsReady:false,loadSeq:0,loadAbort:null};
 const $=s=>document.querySelector(s); const $$=s=>Array.from(document.querySelectorAll(s));
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function clean(v){return String(v??'').replace(/\s+/g,' ').trim();}
@@ -96,7 +96,11 @@ function saveUser(u){try{if(u){localStorage.setItem('ccc_bitem_auth_user',JSON.s
 function authHeaders(json=false){const h={}; const t=token(); if(t)h.authorization='Bearer '+t; if(json)h['content-type']='application/json'; return h;}
 function login(){location.href='/login?next='+encodeURIComponent(location.pathname+location.hash);}
 function toast(msg,err=false){const t=document.createElement('div');t.className='toast'+(err?' err':'');t.textContent=msg;document.body.appendChild(t);setTimeout(()=>t.remove(),3600);} 
-async function readJson(res){const txt=await res.text();try{return JSON.parse(txt);}catch(e){throw new Error((txt||'').slice(0,300)||'Bad JSON response');}}
+async function readJson(res){const txt=await res.text();try{return JSON.parse(txt);}catch(e){const ct=(res.headers&&res.headers.get('content-type')||'').toLowerCase(); if((txt||'').trim().startsWith('<')||ct.includes('text/html')) throw new Error('Backend returned HTML instead of JSON. Please retry after redeploy.'); throw new Error((txt||'').slice(0,180)||'Bad JSON response');}}
+function wait(ms){return new Promise(r=>setTimeout(r,ms));}
+async function fetchTextWithRetry(url,opt,tries=2){let last=null; for(let i=0;i<tries;i++){try{const res=await fetch(url,opt); const txt=await res.text(); const ct=(res.headers.get('content-type')||'').toLowerCase(); const html=(txt||'').trim().startsWith('<')||ct.includes('text/html'); if((res.status===502||res.status===503||res.status===504||html)&&i<tries-1){last=new Error('Temporary backend response '+res.status); await wait(750+i*850); continue;} return {res,txt,html};}catch(e){last=e; if(e&&e.name==='AbortError') throw e; if(i<tries-1){await wait(750+i*850); continue;} throw e;}} throw last||new Error('Request failed');}
+function parseJsonPayload(res,txt,html){try{return JSON.parse(txt);}catch(e){if(html)throw new Error('Backend returned HTML instead of JSON.'); throw new Error((txt||'').slice(0,180)||'Bad JSON response');}}
+
 async function checkAuth(){const t=token(); if(!t){login();return false;} const local=cachedUser(); if(local){STATE.user=local; STATE.canEdit=(local.role==='admin'||(local.edit_pages||local.permissions?.edit||[]).includes('bitem'));}
  try{const res=await fetch('/api/auth/me',{headers:authHeaders(),cache:'no-store'}); const data=await readJson(res); if(!res.ok||!data.ok)throw new Error(data.error||'Unauthorized'); STATE.user=data.user||local; saveUser(STATE.user); const views=STATE.user.view_pages||STATE.user.permissions?.view||[]; const edits=STATE.user.edit_pages||STATE.user.permissions?.edit||[]; if(STATE.user.role!=='admin'&&!views.includes('bitem')){location.href='/projects';return false;} STATE.canEdit=STATE.user.role==='admin'||edits.includes('bitem'); return true;}catch(e){ if(!local){login();return false;} return true; }
 }
@@ -112,8 +116,9 @@ function rowKey(r){return clean(r.fingerprint)||clean(r.bitem_id);}
 function containsAllowedAreaText(s){s=clean(s).toUpperCase();return ['A211','A212','A222','A231','A232','A233'].some(a=>s.includes(a));}
 function effectiveContractor(r){
   const raw=clean(r.contractor).toUpperCase();
+  const area=clean(r.area).toUpperCase();
   const hay=[r.area,r.comment_text,r.iso_or_spool,r.tp_no].map(clean).join(' ').toUpperCase();
-  if(raw.includes('CCC') && containsAllowedAreaText(hay)) return 'CCC';
+  if(raw.includes('CCC') && (area==='GENERAL' || containsAllowedAreaText(hay))) return 'CCC';
   return 'JGC Direct MP';
 }
 function getCols(r){return {
@@ -135,7 +140,27 @@ function closeEditor(){if(!STATE.editing)return; const {tr,row}=STATE.editing; p
 function openEditor(tr,row){if(!STATE.canEdit){toast('View only account. Editing is disabled.',true);return;} closeEditor(); STATE.editing={tr,row}; const td=tr.querySelector('.dateCell'); const current=fmtDate(row.final_cleared_date||row.user_cleared_date||''); td.innerHTML=`<div class="editbox"><input type="date" value="${esc(current)}"><button class="btn" data-cal>📅</button><button class="btn good" data-save>✓</button><button class="btn warn" data-clear>Clear</button><button class="btn danger" data-cancel>×</button></div>`; const box=td.querySelector('.editbox'); box.onclick=ev=>ev.stopPropagation(); box.onmousedown=ev=>ev.stopPropagation(); const inp=box.querySelector('input'); box.querySelector('[data-cal]').onclick=ev=>{ev.stopPropagation(); inp.focus(); try{inp.showPicker&&inp.showPicker();}catch(e){}}; box.querySelector('[data-cancel]').onclick=ev=>{ev.stopPropagation(); closeEditor();}; box.querySelector('[data-save]').onclick=ev=>{ev.stopPropagation(); if(!fmtDate(inp.value)){toast('Please select a date or use Clear.',true);return;} commit(row,fmtDate(inp.value),false,tr);}; box.querySelector('[data-clear]').onclick=ev=>{ev.stopPropagation(); if(confirm('Remove Punch Cleared Date? The user name will remain as last editor.')) commit(row,'',true,tr);};}
 function patchRow(tr,row){if(!tr)return; const c=getCols(row); const f=tr.querySelector('.finalCell'), d=tr.querySelector('.dateCell'), u=tr.querySelector('.userCell'); if(f)f.innerHTML=pill(c.final); if(d)d.textContent=c.fdate; if(u)u.textContent=c.user; const note=tr.querySelector('.cell-note'); if(note)note.textContent=c.note;}
 async function commit(row,iso,clearDate,tr){try{const payload={bitem_id:row.bitem_id||'',fingerprint:row.fingerprint||'',punch_cleared:iso||'',clear_date:clearDate?'1':'0',remarks:clearDate?'User removed Punch Cleared date':'Inline Punch Cleared update'}; const res=await fetch('/api/bitem/save',{method:'POST',headers:authHeaders(true),body:JSON.stringify(payload),cache:'no-store'}); const data=await readJson(res); if(!res.ok||!data.ok)throw new Error(data.error||'Save failed'); const updated=Object.assign({},row,data.row||{}, {user_cleared_by:data.user_cleared_by||data.last_edited_by||(STATE.user&&STATE.user.display_name)||row.user_cleared_by}); const idx=STATE.rows.findIndex(x=>rowKey(x)===rowKey(row)); if(idx>=0)STATE.rows[idx]=updated; STATE.editing=null; patchRow(tr,updated); toast(clearDate?'Date cleared.':'Saved.');}catch(e){toast(e.message||String(e),true);}}
-async function load(page=STATE.page){STATE.page=Math.max(1,page); STATE.limit=Number($('#pageSize').value||100); STATE.offset=(STATE.page-1)*STATE.limit; $('#wrap').innerHTML='<div class="loader">Loading B Item rows...</div>'; const p=new URLSearchParams({limit:STATE.limit,offset:STATE.offset,include_removed:'0',t:Date.now()}); if(STATE.filters.q)p.set('q',STATE.filters.q); if(STATE.filters.contractor!=='ALL')p.set('contractor',STATE.filters.contractor); if(STATE.filters.area!=='ALL')p.set('area',STATE.filters.area); if(STATE.filters.stage!=='ALL')p.set('stage',STATE.filters.stage); if(STATE.filters.status!=='ALL')p.set('final_status',STATE.filters.status); try{const res=await fetch('/api/bitem/state?'+p,{headers:authHeaders(),cache:'no-store'}); const data=await readJson(res); if(!res.ok||!data.ok)throw new Error(data.error||'B Item state failed'); STATE.rows=data.rows||[]; STATE.total=Number(data.total||0); fillFacets(data.facets||{}); render();}catch(e){$('#wrap').innerHTML='<div class="empty">B Item load failed: '+esc(e.message||e)+'</div>';}}
+async function load(page=STATE.page){
+ STATE.page=Math.max(1,page); STATE.limit=Number($('#pageSize').value||100); STATE.offset=(STATE.page-1)*STATE.limit;
+ const seq=++STATE.loadSeq;
+ if(STATE.loadAbort){try{STATE.loadAbort.abort();}catch(e){}}
+ STATE.loadAbort=('AbortController' in window)?new AbortController():null;
+ if(!STATE.rows.length) $('#wrap').innerHTML='<div class="loader">Loading B Item rows...</div>'; else $('#countText').textContent='B Item Rows: loading...';
+ const p=new URLSearchParams({limit:STATE.limit,offset:STATE.offset,include_removed:'0',facets:STATE.facetsReady?'0':'1',kpi:'0',t:Date.now()});
+ if(STATE.filters.q)p.set('q',STATE.filters.q); if(STATE.filters.contractor!=='ALL')p.set('contractor',STATE.filters.contractor); if(STATE.filters.area!=='ALL')p.set('area',STATE.filters.area); if(STATE.filters.stage!=='ALL')p.set('stage',STATE.filters.stage); if(STATE.filters.status!=='ALL')p.set('final_status',STATE.filters.status);
+ try{
+  const out=await fetchTextWithRetry('/api/bitem/state?'+p,{headers:authHeaders(),cache:'no-store',signal:STATE.loadAbort?STATE.loadAbort.signal:undefined},2);
+  if(seq!==STATE.loadSeq) return;
+  const data=parseJsonPayload(out.res,out.txt,out.html);
+  if(!out.res.ok||!data.ok)throw new Error(data.error||('B Item state failed HTTP '+out.res.status));
+  STATE.rows=data.rows||[]; STATE.total=Number(data.total||0); if(data.facets){fillFacets(data.facets||{}); STATE.facetsReady=true;} render();
+ }catch(e){
+  if(e&&e.name==='AbortError') return;
+  if(seq!==STATE.loadSeq) return;
+  const msg=e.message||String(e);
+  if(STATE.rows.length){toast('B Item reload failed: '+msg,true); render();}
+  else $('#wrap').innerHTML='<div class="empty">B Item load failed: '+esc(msg)+'</div>';
+ }}
 function fillFacets(f){const area=$('#areaSel'), stage=$('#stageSel'); if(area.options.length<=1){(f.areas||[]).forEach(v=>area.add(new Option(v,v)));} if(stage.options.length<=1){(f.stages||[]).forEach(v=>stage.add(new Option(v,v)));}}
 function applyFilters(){STATE.filters.q=clean($('#q').value); STATE.filters.area=$('#areaSel').value; STATE.filters.stage=$('#stageSel').value; STATE.filters.status=$('#statusSel').value; load(1);} 
 function exportCsv(){const headers=['B Item ID','TP Number','Stage','Area','ISO','Sheet','Punch Category','Material Type','Comment','FMS/CCC Excel Status','Final Status','Punch Cleared Date','User Cleared','Note','Scope']; const lines=[headers.join(',')]; STATE.rows.forEach(r=>{const c=getCols(r); const vals=[c.id,c.tp,c.st,c.area,c.iso,c.sheet,c.cat,c.mat,c.comment,c.query,c.final,c.fdate,c.user,c.note,c.scope].map(v=>'"'+String(v||'').replace(/"/g,'""')+'"'); lines.push(vals.join(','));}); const blob=new Blob([lines.join('\n')],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='B_Item_Current_Page.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),500);}
