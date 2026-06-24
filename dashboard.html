@@ -8596,6 +8596,8 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     return p;
   }
   function currentKey(){ return currentParams().toString(); }
+  function paramsForContractor(con){ var p = currentParams(); p.set('contractor', con || 'ALL'); return p; }
+  function keyForContractor(con){ return paramsForContractor(con).toString(); }
   window.getDashboardBItemContractorFilter = conValue;
 
   function clearDashboardCaches(){
@@ -8731,13 +8733,25 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     try { if (typeof reinstatementPendingRows === 'function') return reinstatementPendingRows(current) || []; } catch(e) {}
     return [];
   }
+  function pendingBaseRowsForContractor(con){
+    var f = getF(), oldCon = f.con;
+    try {
+      f.con = con || 'ALL';
+      clearDashboardCaches();
+      return pendingBaseRows();
+    } catch(e) {
+      return [];
+    } finally {
+      try { f.con = oldCon; clearDashboardCaches(); } catch(_) {}
+    }
+  }
   function d1Map(data){
     var m = {};
     (data && Array.isArray(data.by_tp) ? data.by_tp : []).forEach(function(x){ var tp = U(x.tp || x.tp_no || x.test_pack || ''); if (tp) m[tp] = x; });
     return m;
   }
-  function scopedReturnPunchTotals(data){
-    var base = pendingBaseRows();
+  function scopedReturnPunchTotalsForContractor(con, data){
+    var base = pendingBaseRowsForContractor(con || conValue());
     if (!base.length || !data || !Array.isArray(data.by_tp)) return data && data.ret || {};
     var map = d1Map(data), total = 0, cleared = 0;
     base.forEach(function(r){
@@ -8746,7 +8760,22 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
       var rc = Number(x.retCleared != null ? x.retCleared : (x.ret_cleared != null ? x.ret_cleared : (r.retCleared || 0))) || 0;
       total += rt; cleared += rc;
     });
-    return { total: total, cleared: cleared, balance: Math.max(total - cleared, 0), source: 'pending_reinstatement_scope' };
+    return { total: total, cleared: cleared, balance: Math.max(total - cleared, 0), source: 'pending_reinstatement_scope_' + (con || conValue()) };
+  }
+  function scopedReturnPunchTotals(data){
+    if (data && data.__splitRetTotal) return data.__splitRetTotal;
+    if (conValue() === 'ALL') {
+      var cData = stageCache.get(keyForContractor('CCC'));
+      var jData = stageCache.get(keyForContractor('JGC Direct MP'));
+      if (cData && jData) {
+        var c = scopedReturnPunchTotalsForContractor('CCC', cData);
+        var j = scopedReturnPunchTotalsForContractor('JGC Direct MP', jData);
+        var total = Number(c.total || 0) + Number(j.total || 0);
+        var cleared = Number(c.cleared || 0) + Number(j.cleared || 0);
+        return { total: total, cleared: cleared, balance: Math.max(total - cleared, 0), source: 'sum_ccc_jgc_reinstatement_scope' };
+      }
+    }
+    return scopedReturnPunchTotalsForContractor(conValue(), data);
   }
   function enrichPendingRows(baseRows, data){
     var map = d1Map(data || {});
@@ -8801,29 +8830,54 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     if (stageCache.has(key)) applyStageDataForKey(key, stageCache.get(key), false);
     else applyStageDataForKey(key, null, true);
   }
+  function fetchStageJsonForKey(key, signal){
+    var p = new URLSearchParams(key); p.set('_v49', Date.now());
+    return fetch('/api/bitem/stage-control?' + p.toString(), { headers: tokenHeaders(), cache:'no-store', signal: signal })
+      .then(function(r){ return r.text().then(function(t){
+        var j; try { j = JSON.parse(t); } catch(e){ throw new Error('stage-control non-JSON: '+t.slice(0,120)); }
+        if (!r.ok || !j.ok) throw new Error(j && j.error ? j.error : ('HTTP '+r.status));
+        return j;
+      }); });
+  }
+  function attachAllSplitReturn(key, data, signal){
+    var contractor = (new URLSearchParams(key)).get('contractor') || 'ALL';
+    if (contractor !== 'ALL') return Promise.resolve(data);
+    var cKey = keyForContractor('CCC');
+    var jKey = keyForContractor('JGC Direct MP');
+    var cPromise = stageCache.has(cKey) ? Promise.resolve(stageCache.get(cKey)) : fetchStageJsonForKey(cKey, signal).then(function(d){ stageCache.set(cKey, d); return d; });
+    var jPromise = stageCache.has(jKey) ? Promise.resolve(stageCache.get(jKey)) : fetchStageJsonForKey(jKey, signal).then(function(d){ stageCache.set(jKey, d); return d; });
+    return Promise.all([cPromise, jPromise]).then(function(pair){
+      var c = scopedReturnPunchTotalsForContractor('CCC', pair[0]);
+      var j = scopedReturnPunchTotalsForContractor('JGC Direct MP', pair[1]);
+      var total = Number(c.total || 0) + Number(j.total || 0);
+      var cleared = Number(c.cleared || 0) + Number(j.cleared || 0);
+      data.__splitRetTotal = { total: total, cleared: cleared, balance: Math.max(total - cleared, 0), source: 'sum_ccc_jgc_reinstatement_scope' };
+      return data;
+    }).catch(function(e){
+      if (!(e && e.name === 'AbortError')) console.warn('V49 split return total failed:', e && e.message || e);
+      return data;
+    });
+  }
   function fetchStage(force){
     var key = currentKey();
     if (!force && stageCache.has(key)) { applyStageDataForKey(key, stageCache.get(key), false); return Promise.resolve(stageCache.get(key)); }
     if (stageInFlightPromise && stageInFlightKey === key) {
-      // Same filter is already loading; do not abort/restart. This prevents the Stage Control B Item numbers from flickering.
       return stageInFlightPromise;
     }
     if (stageAbort && stageInFlightKey && stageInFlightKey !== key) { try { stageAbort.abort(); } catch(e){} }
     stageAbort = ('AbortController' in window) ? new AbortController() : null;
     var seq = ++stageSeq;
     applyStageDataForKey(key, stageCache.get(key) || null, !stageCache.has(key));
-    var p = new URLSearchParams(key); p.set('_v48', Date.now());
     stageInFlightKey = key;
-    stageInFlightPromise = fetch('/api/bitem/stage-control?' + p.toString(), { headers: tokenHeaders(), cache:'no-store', signal: stageAbort ? stageAbort.signal : undefined })
-      .then(function(r){ return r.text().then(function(t){
-        var j; try { j = JSON.parse(t); } catch(e){ throw new Error('stage-control non-JSON: '+t.slice(0,120)); }
-        if (!r.ok || !j.ok) throw new Error(j && j.error ? j.error : ('HTTP '+r.status));
+    stageInFlightPromise = fetchStageJsonForKey(key, stageAbort ? stageAbort.signal : undefined)
+      .then(function(j){ return attachAllSplitReturn(key, j, stageAbort ? stageAbort.signal : undefined); })
+      .then(function(j){
         if (seq !== stageSeq || key !== currentKey()) return j;
         stageCache.set(key, j);
         applyStageDataForKey(key, j, false);
         return j;
-      }); })
-      .catch(function(e){ if (!(e && e.name === 'AbortError')) console.warn('V48 Stage Control D1 failed:', e && e.message || e); if (key === currentKey()) reconcileStage(); })
+      })
+      .catch(function(e){ if (!(e && e.name === 'AbortError')) console.warn('V49 Stage Control D1 failed:', e && e.message || e); if (key === currentKey()) reconcileStage(); })
       .then(function(j){
         if (stageInFlightKey === key) { stageInFlightKey = ''; stageInFlightPromise = null; }
         return j;
