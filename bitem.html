@@ -84,7 +84,7 @@ body.light .grid td:first-child{background:#fff}body.light .grid tr:nth-child(ev
 <script>
 (function(){
 'use strict';
-const STATE={rows:[],total:0,offset:0,limit:100,page:1,filters:{contractor:'ALL',area:'ALL',stage:'ALL',status:'ALL',q:''},editing:null,user:null,canEdit:false,facetsReady:false,loadSeq:0,loadAbort:null,cacheTTL:180000,savingKeys:new Set()};
+const STATE={rows:[],total:0,offset:0,limit:100,page:1,filters:{contractor:'ALL',area:'ALL',stage:'ALL',status:'ALL',q:''},editing:null,user:null,canEdit:false,facetsReady:false,loadSeq:0,loadAbort:null,cacheTTL:600000,cacheFreshTTL:120000,savingKeys:new Set()};
 const $=s=>document.querySelector(s); const $$=s=>Array.from(document.querySelectorAll(s));
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function clean(v){return String(v??'').replace(/\s+/g,' ').trim();}
@@ -104,24 +104,47 @@ function parseJsonPayload(res,txt,html){try{return JSON.parse(txt);}catch(e){if(
 function filterKey(page=STATE.page){
   return ['v53',page,STATE.limit,STATE.filters.contractor,STATE.filters.area,STATE.filters.stage,STATE.filters.status,STATE.filters.q].map(clean).join('|');
 }
-function cacheGet(key){
+function cachePrefix(){return 'bitem_state_cache_v56_'+(token().slice(-14)||'anon')+'_';}
+function cacheName(key){return cachePrefix()+key;}
+function readCacheObj(storage,key){
   try{
-    const raw=sessionStorage.getItem('bitem_state_cache_'+key);
+    const raw=storage.getItem(cacheName(key));
     if(!raw) return null;
     const obj=JSON.parse(raw);
     if(!obj || !obj.ts || Date.now()-obj.ts>STATE.cacheTTL) return null;
-    return obj.data || null;
+    return obj;
   }catch(e){return null;}
 }
+function cacheGetObj(key){return readCacheObj(sessionStorage,key)||readCacheObj(localStorage,key);}
+function cacheGet(key){const obj=cacheGetObj(key); return obj ? obj.data : null;}
 function cacheSet(key,data){
   try{
-    sessionStorage.setItem('bitem_state_cache_'+key,JSON.stringify({ts:Date.now(),data:{total:Number(data.total||0),limit:Number(data.limit||STATE.limit),offset:Number(data.offset||STATE.offset),rows:data.rows||[]}}));
+    const obj={ts:Date.now(),data:{total:Number(data.total||0),limit:Number(data.limit||STATE.limit),offset:Number(data.offset||STATE.offset),rows:data.rows||[]}};
+    const raw=JSON.stringify(obj);
+    sessionStorage.setItem(cacheName(key),raw);
+    localStorage.setItem(cacheName(key),raw);
   }catch(e){}
 }
+function newestCachedData(){
+  let best=null;
+  const pref=cachePrefix();
+  [sessionStorage,localStorage].forEach(st=>{
+    try{
+      for(let i=0;i<st.length;i++){
+        const k=st.key(i); if(!k||!k.startsWith(pref)) continue;
+        const obj=JSON.parse(st.getItem(k)||'null');
+        if(!obj||!obj.ts||Date.now()-obj.ts>STATE.cacheTTL) continue;
+        if(!best||obj.ts>best.ts) best=obj;
+      }
+    }catch(e){}
+  });
+  return best ? best.data : null;
+}
 function clearStateCaches(){
-  try{
-    Object.keys(sessionStorage).forEach(k=>{if(k.startsWith('bitem_state_cache_'))sessionStorage.removeItem(k);});
-  }catch(e){}
+  const prefixes=['bitem_state_cache_','bitem_state_cache_v56_'];
+  [sessionStorage,localStorage].forEach(st=>{
+    try{Object.keys(st).forEach(k=>{if(prefixes.some(p=>k.startsWith(p)))st.removeItem(k);});}catch(e){}
+  });
 }
 function cacheCurrentPage(){
   try{cacheSet(filterKey(STATE.page),{total:STATE.total,limit:STATE.limit,offset:STATE.offset,rows:STATE.rows});}catch(e){}
@@ -236,8 +259,13 @@ async function load(page=STATE.page, opts={}){
  if(STATE.loadAbort){try{STATE.loadAbort.abort();}catch(e){}}
  STATE.loadAbort=('AbortController' in window)?new AbortController():null;
  const key=filterKey(STATE.page);
- const cached=!opts.force ? cacheGet(key) : null;
- const usedCache=renderCachedData(cached,STATE.page);
+ const cachedObj=!opts.force ? cacheGetObj(key) : null;
+ const usedCache=renderCachedData(cachedObj && cachedObj.data,STATE.page);
+ if(usedCache && cachedObj && Date.now()-cachedObj.ts < STATE.cacheFreshTTL){
+  $('#countText').textContent='B Item Rows: '+Number(STATE.total||0).toLocaleString()+'  ·  cached';
+  loadFacetsOnce();
+  return;
+ }
  if(!usedCache){
   if(!STATE.rows.length) $('#wrap').innerHTML='<div class="loader">Loading B Item rows...</div>';
   else $('#countText').textContent='B Item Rows: loading...';
@@ -257,7 +285,9 @@ async function load(page=STATE.page, opts={}){
   if(e&&e.name==='AbortError') return;
   if(seq!==STATE.loadSeq) return;
   const msg=e.message||String(e);
-  if(usedCache || STATE.rows.length){toast('B Item backend is slow; showing the last loaded rows.',true); render();}
+  const fallback=newestCachedData();
+  if(!STATE.rows.length && fallback){renderCachedData(fallback,STATE.page); toast('B Item backend is busy; showing the last saved rows.',true); return;}
+  if(usedCache || STATE.rows.length){toast('B Item backend is busy; showing the last loaded rows.',true); render();}
   else $('#wrap').innerHTML='<div class="empty">B Item load failed: '+esc(msg)+'</div>';
  }}
 function fillFacets(f){const area=$('#areaSel'), stage=$('#stageSel'); if(area.options.length<=1){(f.areas||[]).forEach(v=>area.add(new Option(v,v)));} if(stage.options.length<=1){(f.stages||[]).forEach(v=>stage.add(new Option(v,v)));}}
@@ -268,7 +298,7 @@ async function loadFacetsOnce(){
  if(STATE.facetsReady||facetsLoading) return;
  facetsLoading=true;
  try{
-  const cached=sessionStorage.getItem('bitem_facets_cache_v53');
+  const cached=sessionStorage.getItem('bitem_facets_cache_v56')||localStorage.getItem('bitem_facets_cache_v56');
   if(cached){
     const obj=JSON.parse(cached);
     if(obj && obj.ts && Date.now()-obj.ts<600000 && obj.facets){fillFacets(obj.facets); STATE.facetsReady=true; facetsLoading=false; return;}
@@ -277,7 +307,7 @@ async function loadFacetsOnce(){
  try{
   const out=await fetchTextWithRetry('/api/bitem/facets?t='+Date.now(),{headers:authHeaders(),cache:'no-store'},2);
   const data=parseJsonPayload(out.res,out.txt,out.html);
-  if(out.res.ok&&data&&data.ok){fillFacets(data.facets||{}); STATE.facetsReady=true; try{sessionStorage.setItem('bitem_facets_cache_v53',JSON.stringify({ts:Date.now(),facets:data.facets||{}}));}catch(e){}}
+  if(out.res.ok&&data&&data.ok){fillFacets(data.facets||{}); STATE.facetsReady=true; try{const raw=JSON.stringify({ts:Date.now(),facets:data.facets||{}}); sessionStorage.setItem('bitem_facets_cache_v56',raw); localStorage.setItem('bitem_facets_cache_v56',raw);}catch(e){}}
  }catch(e){/* facets are optional; table must never fail because of them */}
  facetsLoading=false;
 }
