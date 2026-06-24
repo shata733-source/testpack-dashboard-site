@@ -1,25 +1,14 @@
 import { json, requirePagePermission } from '../../_shared/auth.js';
+import { assertSupabase, sbRpc } from '../../_shared/supabase.js';
 
 export async function onRequestGet(context) {
   try {
-    if (!context.env || !context.env.DB) return json({ ok:false, error:'D1 binding DB is not configured' }, 500);
+    const sbError = assertSupabase(context.env); if (sbError) return sbError;
     const auth = await requirePagePermission(context, 'bitem', 'view');
     if (auth.error) return auth.error;
-
-    const [areas, stages] = await Promise.all([
-      context.env.DB.prepare(`SELECT DISTINCT area AS v FROM bitem_registry WHERE active=1 AND area IS NOT NULL AND area<>'' ORDER BY area LIMIT 500`).all(),
-      context.env.DB.prepare(`SELECT DISTINCT construction_stage AS v FROM bitem_registry WHERE active=1 AND construction_stage IS NOT NULL AND construction_stage<>'' ORDER BY construction_stage LIMIT 250`).all()
-    ]);
-
-    return json({
-      ok: true,
-      facets: {
-        areas: (areas.results || []).map(x => x.v).filter(Boolean),
-        stages: (stages.results || []).map(x => x.v).filter(Boolean),
-        contractors: ['CCC', 'JGC Direct MP']
-      }
-    });
+    const data = await sbRpc(context.env, 'bitem_facets_api', {});
+    return json(data && typeof data === 'object' ? data : { ok:false, source:'Supabase', error:'Invalid bitem_facets_api response' }, data?.ok === false ? 500 : 200);
   } catch (e) {
-    return json({ ok:false, error:(e && e.message) ? e.message : String(e || 'Unknown error') }, 500);
+    return json({ ok:false, source:'Supabase', endpoint:'facets', error:(e && e.message) ? e.message : String(e || 'Unknown error') }, 500);
   }
 }
