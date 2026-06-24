@@ -1,25 +1,31 @@
 import { json, requirePagePermission } from '../../_shared/auth.js';
+import { assertSupabase, sbSelectAll } from '../../_shared/supabase.js';
+
+const CACHE = globalThis.__BITEM_SUPABASE_FACETS_CACHE__ || (globalThis.__BITEM_SUPABASE_FACETS_CACHE__ = { ts:0, data:null });
+const TTL_MS = 10 * 60 * 1000;
+function uniqSorted(rows, key) {
+  return [...new Set((rows || []).map(r => r && r[key]).filter(Boolean).map(String))].sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}));
+}
 
 export async function onRequestGet(context) {
   try {
-    if (!context.env || !context.env.DB) return json({ ok:false, error:'D1 binding DB is not configured' }, 500);
+    const sbError = assertSupabase(context.env); if (sbError) return sbError;
     const auth = await requirePagePermission(context, 'bitem', 'view');
     if (auth.error) return auth.error;
+    if (CACHE.data && Date.now() - CACHE.ts < TTL_MS) return json({ ok:true, cached:true, source:'Supabase', facets:CACHE.data });
 
-    const [areas, stages] = await Promise.all([
-      context.env.DB.prepare(`SELECT DISTINCT area AS v FROM bitem_registry WHERE active=1 AND area IS NOT NULL AND area<>'' ORDER BY area LIMIT 500`).all(),
-      context.env.DB.prepare(`SELECT DISTINCT construction_stage AS v FROM bitem_registry WHERE active=1 AND construction_stage IS NOT NULL AND construction_stage<>'' ORDER BY construction_stage LIMIT 250`).all()
-    ]);
-
-    return json({
-      ok: true,
-      facets: {
-        areas: (areas.results || []).map(x => x.v).filter(Boolean),
-        stages: (stages.results || []).map(x => x.v).filter(Boolean),
-        contractors: ['CCC', 'JGC Direct MP']
-      }
-    });
+    const params = new URLSearchParams();
+    params.set('select', 'area,construction_stage');
+    params.set('active', 'eq.1');
+    const rows = await sbSelectAll(context.env, 'bitem_registry_effective', params, { pageSize: 2000, maxRows: 30000 });
+    const facets = {
+      areas: uniqSorted(rows, 'area'),
+      stages: uniqSorted(rows, 'construction_stage'),
+      contractors: ['CCC','JGC Direct MP']
+    };
+    CACHE.ts = Date.now(); CACHE.data = facets;
+    return json({ ok:true, cached:false, source:'Supabase', facets });
   } catch (e) {
-    return json({ ok:false, error:(e && e.message) ? e.message : String(e || 'Unknown error') }, 500);
+    return json({ ok:false, source:'Supabase', error:(e && e.message) ? e.message : String(e || 'Unknown error') }, 500);
   }
 }

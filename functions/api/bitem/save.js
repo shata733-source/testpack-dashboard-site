@@ -1,81 +1,42 @@
 import { json, requirePagePermission, getClientIP } from '../../_shared/auth.js';
-import { assertDB, clean, normalizeDate } from '../../_shared/bitem.js';
-
-async function ensureEditTables(env) {
-  if (!env || !env.DB) return;
-  try {
-    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS bitem_user_edits (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      bitem_id TEXT,
-      fingerprint TEXT,
-      field_name TEXT,
-      old_value TEXT,
-      new_value TEXT,
-      edited_by TEXT,
-      edited_by_name TEXT,
-      remarks TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    )`).run();
-  } catch (_) {}
-  const regAlters = [
-    'ALTER TABLE bitem_registry ADD COLUMN user_cleared_date TEXT',
-    'ALTER TABLE bitem_registry ADD COLUMN user_cleared_by TEXT',
-    'ALTER TABLE bitem_registry ADD COLUMN final_status TEXT',
-    'ALTER TABLE bitem_registry ADD COLUMN final_cleared_date TEXT',
-    'ALTER TABLE bitem_registry ADD COLUMN last_edited_by TEXT',
-    'ALTER TABLE bitem_registry ADD COLUMN last_edited_at TEXT',
-    'ALTER TABLE bitem_registry ADD COLUMN source_flag TEXT',
-    'ALTER TABLE bitem_registry ADD COLUMN sync_note TEXT',
-    'ALTER TABLE bitem_registry ADD COLUMN updated_at TEXT'
-  ];
-  for (const sql of regAlters) { try { await env.DB.prepare(sql).run(); } catch (_) {} }
-}
+import { clean, normalizeDate } from '../../_shared/bitem.js';
+import { assertSupabase, sbFetch, sbJson, restValue } from '../../_shared/supabase.js';
 
 function upper(v) { return clean(v).toUpperCase(); }
-
-const CCC_ALLOWED_SQL = [
-  "UPPER(COALESCE(area,'')) LIKE '%A211%'","UPPER(COALESCE(comment_text,'')) LIKE '%A211%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A211%'","UPPER(COALESCE(tp_no,'')) LIKE '%A211%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A212%'","UPPER(COALESCE(comment_text,'')) LIKE '%A212%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A212%'","UPPER(COALESCE(tp_no,'')) LIKE '%A212%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A222%'","UPPER(COALESCE(comment_text,'')) LIKE '%A222%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A222%'","UPPER(COALESCE(tp_no,'')) LIKE '%A222%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A231%'","UPPER(COALESCE(comment_text,'')) LIKE '%A231%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A231%'","UPPER(COALESCE(tp_no,'')) LIKE '%A231%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A232%'","UPPER(COALESCE(comment_text,'')) LIKE '%A232%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A232%'","UPPER(COALESCE(tp_no,'')) LIKE '%A232%'",
-  "UPPER(COALESCE(area,'')) LIKE '%A233%'","UPPER(COALESCE(comment_text,'')) LIKE '%A233%'","UPPER(COALESCE(iso_or_spool,'')) LIKE '%A233%'","UPPER(COALESCE(tp_no,'')) LIKE '%A233%'",
-  "UPPER(TRIM(COALESCE(area,'')))='GENERAL'"
-].join(' OR ');
-const EFFECTIVE_CONTRACTOR_SQL = `CASE WHEN UPPER(COALESCE(contractor,'')) LIKE '%JGC%' THEN 'JGC Direct MP' WHEN UPPER(COALESCE(contractor,'')) LIKE '%CCC%' AND (${CCC_ALLOWED_SQL}) THEN 'CCC' ELSE 'JGC Direct MP' END`;
-
-
+function filterBy(row) {
+  if (clean(row.fingerprint)) return `fingerprint=eq.${restValue(row.fingerprint)}`;
+  return `bitem_id=eq.${restValue(row.bitem_id || '')}`;
+}
 async function findBItem(env, bitemId, fingerprint) {
+  const select = 'select=bitem_id,fingerprint,contractor,tp_no,construction_stage,punch_category,comment_text,material_type,iso_or_spool,area,query_status,query_cleared_date,final_status,final_cleared_date,user_cleared_date,user_cleared_by,last_edited_by,last_edited_at,source_flag,sync_note,active,row_json,updated_at';
   if (fingerprint) {
-    const r = await env.DB.prepare('SELECT * FROM bitem_registry WHERE fingerprint=? LIMIT 1').bind(fingerprint).first();
-    if (r) return r;
+    const r = await sbJson(env, `/rest/v1/bitem_registry?${select}&fingerprint=eq.${restValue(fingerprint)}&limit=1`);
+    if (Array.isArray(r.data) && r.data[0]) return r.data[0];
   }
   if (bitemId) {
-    const r = await env.DB.prepare('SELECT * FROM bitem_registry WHERE bitem_id=? LIMIT 1').bind(bitemId).first();
-    if (r) return r;
+    const r = await sbJson(env, `/rest/v1/bitem_registry?${select}&bitem_id=eq.${restValue(bitemId)}&limit=1`);
+    if (Array.isArray(r.data) && r.data[0]) return r.data[0];
   }
   return null;
 }
-
 async function selectUpdated(env, row) {
-  if (row.fingerprint) return await env.DB.prepare(`
-    SELECT bitem_id, fingerprint, ${EFFECTIVE_CONTRACTOR_SQL} AS contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
-           iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, user_cleared_by,
-           last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
-    FROM bitem_registry WHERE fingerprint=? LIMIT 1
-  `).bind(row.fingerprint).first();
-  return await env.DB.prepare(`
-    SELECT bitem_id, fingerprint, ${EFFECTIVE_CONTRACTOR_SQL} AS contractor, tp_no, construction_stage, punch_category, comment_text, material_type,
-           iso_or_spool, area, query_status, query_cleared_date, final_status, final_cleared_date, user_cleared_date, user_cleared_by,
-           last_edited_by, last_edited_at, source_flag, sync_note, active, row_json, updated_at
-    FROM bitem_registry WHERE bitem_id=? LIMIT 1
-  `).bind(row.bitem_id || '').first();
+  const select = 'select=bitem_id,fingerprint,contractor:effective_contractor,tp_no,construction_stage,punch_category,comment_text,material_type,iso_or_spool,area,query_status,query_cleared_date,final_status,final_cleared_date,user_cleared_date,user_cleared_by,last_edited_by,last_edited_at,source_flag,sync_note,active,row_json,updated_at';
+  const filter = clean(row.fingerprint) ? `fingerprint=eq.${restValue(row.fingerprint)}` : `bitem_id=eq.${restValue(row.bitem_id || '')}`;
+  const r = await sbJson(env, `/rest/v1/bitem_registry_effective?${select}&${filter}&limit=1`);
+  return Array.isArray(r.data) ? r.data[0] : null;
+}
+async function insertLog(env, table, row) {
+  try {
+    await sbFetch(env, `/rest/v1/${table}`, {
+      method:'POST',
+      headers:{ prefer:'return=minimal' },
+      body: JSON.stringify(row)
+    });
+  } catch (_) {}
 }
 
 export async function handleSave(context, rawBody = {}) {
-  const dbError = assertDB(context.env); if (dbError) return dbError;
-  await ensureEditTables(context.env);
-
+  const sbError = assertSupabase(context.env); if (sbError) return sbError;
   const auth = await requirePagePermission(context, 'bitem', 'edit');
   if (auth.error) return auth.error;
   const user = auth.user || {};
@@ -88,7 +49,6 @@ export async function handleSave(context, rawBody = {}) {
   const clearDate = String(rawBody.clear_date || rawBody.clearDate || rawBody.action || '').toLowerCase();
   const isClearAction = clearDate === '1' || clearDate === 'true' || clearDate === 'clear' || clearDate === 'remove';
   const remarks = clean(rawBody.remarks || (isClearAction ? 'User removed Punch Cleared date' : 'Inline Punch Cleared update'));
-
   if (!bitemId && !fingerprint) return json({ ok:false, error:'bitem_id or fingerprint is required' }, 400);
 
   const row = await findBItem(context.env, bitemId, fingerprint);
@@ -127,38 +87,53 @@ export async function handleSave(context, rawBody = {}) {
     syncNote = 'Closed due to the closure of the current construction stage.';
   }
 
-  const whereCol = clean(row.fingerprint) ? 'fingerprint' : 'bitem_id';
-  const whereVal = clean(row.fingerprint) || clean(row.bitem_id || bitemId);
-  const result = await context.env.DB.prepare(`
-    UPDATE bitem_registry SET
-      user_cleared_date=?,
-      user_cleared_by=?,
-      final_status=?,
-      final_cleared_date=?,
-      last_edited_by=?,
-      last_edited_at=datetime('now'),
-      source_flag=?,
-      sync_note=?,
-      updated_at=datetime('now')
-    WHERE ${whereCol}=?
-  `).bind(punchCleared, editorDisplay, finalStatus, finalDate, editorDisplay, sourceFlag, syncNote, whereVal).run();
+  const patch = {
+    user_cleared_date: punchCleared,
+    user_cleared_by: editorDisplay,
+    final_status: finalStatus,
+    final_cleared_date: finalDate,
+    last_edited_by: editorDisplay,
+    last_edited_at: new Date().toISOString(),
+    source_flag: sourceFlag,
+    sync_note: syncNote,
+    updated_at: new Date().toISOString()
+  };
+  const filter = filterBy(row);
+  const upd = await sbFetch(context.env, `/rest/v1/bitem_registry?${filter}`, {
+    method:'PATCH',
+    headers:{ prefer:'return=minimal' },
+    body: JSON.stringify(patch)
+  });
+  const updText = await upd.text();
+  if (!upd.ok) throw new Error(`Supabase update failed (${upd.status}): ${updText.slice(0,1000)}`);
+
+  await insertLog(context.env, 'bitem_user_edits', {
+    bitem_id: clean(row.bitem_id || bitemId),
+    fingerprint: clean(row.fingerprint || fingerprint),
+    field_name: 'Punch Cleared',
+    old_value: old.user_cleared_date,
+    new_value: punchCleared,
+    edited_by: editorUsername,
+    edited_by_name: editorDisplay,
+    remarks,
+    created_at: new Date().toISOString()
+  });
+  await insertLog(context.env, 'bitem_audit_log', {
+    action: 'USER_EDIT',
+    bitem_id: clean(row.bitem_id || bitemId),
+    fingerprint: clean(row.fingerprint || fingerprint),
+    username: editorUsername,
+    display_name: editorDisplay,
+    role: user.role || '',
+    ip: getClientIP(context.request),
+    details: { old, new: { user_cleared_date: punchCleared, user_cleared_by: editorDisplay, final_status: finalStatus, final_cleared_date: finalDate, clear_date: isClearAction }, remarks },
+    created_at: new Date().toISOString()
+  });
 
   const updated = await selectUpdated(context.env, row);
-
-  try {
-    await context.env.DB.prepare(`INSERT INTO bitem_user_edits(bitem_id, fingerprint, field_name, old_value, new_value, edited_by, edited_by_name, remarks, created_at)
-      VALUES(?,?,?,?,?,?,?,?,datetime('now'))`)
-      .bind(clean(row.bitem_id || bitemId), clean(row.fingerprint || fingerprint), 'Punch Cleared', old.user_cleared_date, punchCleared, editorUsername, editorDisplay, remarks).run();
-  } catch (_) {}
-
-  try {
-    await context.env.DB.prepare(`INSERT INTO bitem_audit_log(action, bitem_id, fingerprint, username, display_name, role, ip, details, created_at)
-      VALUES(?,?,?,?,?,?,?,?,datetime('now'))`)
-      .bind('USER_EDIT', clean(row.bitem_id || bitemId), clean(row.fingerprint || fingerprint), editorUsername, editorDisplay, user.role || '', getClientIP(context.request), JSON.stringify({ old, new: { user_cleared_date: punchCleared, user_cleared_by: editorDisplay, final_status: finalStatus, final_cleared_date: finalDate, clear_date: isClearAction }, changes: result?.meta || {}, remarks })).run();
-  } catch (_) {}
-
   return json({
     ok: true,
+    source:'Supabase',
     bitem_id: clean(row.bitem_id || bitemId),
     fingerprint: clean(row.fingerprint || fingerprint),
     punch_cleared: punchCleared,
@@ -170,17 +145,7 @@ export async function handleSave(context, rawBody = {}) {
     last_edited_by: editorDisplay,
     source_flag: sourceFlag,
     sync_note: syncNote,
-    row: updated || {
-      ...row,
-      contractor: (clean(row.contractor).toUpperCase().includes('CCC') && ['A211','A212','A222','A231','A232','A233'].some(a => [row.area,row.comment_text,row.iso_or_spool,row.tp_no].map(clean).join(' ').toUpperCase().includes(a))) ? 'CCC' : 'JGC Direct MP',
-      user_cleared_date: punchCleared,
-      user_cleared_by: editorDisplay,
-      final_status: finalStatus,
-      final_cleared_date: finalDate,
-      last_edited_by: editorDisplay,
-      source_flag: sourceFlag,
-      sync_note: syncNote
-    }
+    row: updated || { ...row, ...patch }
   });
 }
 
@@ -190,8 +155,8 @@ export async function onRequestPost(context) {
     try { body = await context.request.json(); } catch (_) { body = {}; }
     return await handleSave(context, body);
   } catch (e) {
-    console.error('BITEM_SAVE_POST_ERROR', e && (e.stack || e.message || e));
-    return json({ ok:false, error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
+    console.error('BITEM_SUPABASE_SAVE_POST_ERROR', e && (e.stack || e.message || e));
+    return json({ ok:false, source:'Supabase', error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
   }
 }
 
@@ -207,7 +172,7 @@ export async function onRequestGet(context) {
       action: url.searchParams.get('action') || ''
     });
   } catch (e) {
-    console.error('BITEM_SAVE_GET_ERROR', e && (e.stack || e.message || e));
-    return json({ ok:false, error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
+    console.error('BITEM_SUPABASE_SAVE_GET_ERROR', e && (e.stack || e.message || e));
+    return json({ ok:false, source:'Supabase', error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
   }
 }
