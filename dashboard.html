@@ -8098,7 +8098,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   window.punchTotalsForDisplay=function(data){const base=originalPunchTotalsForDisplay?originalPunchTotalsForDisplay(data):(typeof punchTotals==='function'?punchTotals(data):{A:{total:0,cleared:0},B:{total:0,cleared:0},C:{total:0,cleared:0}}); return {A:base.A||{total:0,cleared:0},B:allBTotals(data),C:base.C||{total:0,cleared:0}};}; try{punchTotalsForDisplay=window.punchTotalsForDisplay;}catch(e){}
   window.bPunchControlTotals=function(data){const s=stageBTotals(data); return {cns:s.cns,ret:s.ret};}; try{bPunchControlTotals=window.bPunchControlTotals;}catch(e){}
 
-  function repaintStageControl(){try{if(window.currentPage!=='stagescontrol')return; const data=typeof getFiltered==='function'?getFiltered():[]; const s=stageBTotals(data); const box=document.getElementById('bPunchControlBoxes'); if(box&&typeof controlPunchBox==='function')box.innerHTML=controlPunchBox('CNS B Punch',s.cns,'var(--orange)')+controlPunchBox('QC Return B Punch',s.ret,'var(--accent2)'); const pEl=document.getElementById('bPunchTypeChart'); if(pEl&&typeof miniHbar==='function')pEl.innerHTML=miniHbar([['CNS',s.rows.filter(r=>partyOf(r)==='CNS').length],['ENG',s.rows.filter(r=>partyOf(r)==='ENG').length]],'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))'); const mEl=document.getElementById('bPunchMatChart'); if(mEl&&typeof miniHbar==='function'&&typeof groupRowsByCount==='function')mEl.innerHTML=miniHbar(groupRowsByCount(s.rows,matOf),'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))');}catch(e){console.warn('[V16] stage repaint failed:',e);}}
+  function repaintStageControl(){try{if(window.__V46_BITEM_D1_REQUEST_CONTROLLER__||window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__)return; if(window.currentPage!=='stagescontrol')return; const data=typeof getFiltered==='function'?getFiltered():[]; const s=stageBTotals(data); const box=document.getElementById('bPunchControlBoxes'); if(box&&typeof controlPunchBox==='function')box.innerHTML=controlPunchBox('CNS B Punch',s.cns,'var(--orange)')+controlPunchBox('QC Return B Punch',s.ret,'var(--accent2)'); const pEl=document.getElementById('bPunchTypeChart'); if(pEl&&typeof miniHbar==='function')pEl.innerHTML=miniHbar([['CNS',s.rows.filter(r=>partyOf(r)==='CNS').length],['ENG',s.rows.filter(r=>partyOf(r)==='ENG').length]],'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))'); const mEl=document.getElementById('bPunchMatChart'); if(mEl&&typeof miniHbar==='function'&&typeof groupRowsByCount==='function')mEl.innerHTML=miniHbar(groupRowsByCount(s.rows,matOf),'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))');}catch(e){console.warn('[V16] stage repaint failed:',e);}}
   window.renderStagesControl=function(data){const out=originalRenderStagesControl?originalRenderStagesControl.apply(this,arguments):undefined; setTimeout(repaintStageControl,0); return out;}; try{renderStagesControl=window.renderStagesControl;}catch(e){}
   async function loadD1ForPunch(){const api=window.bitemSystemAPI||(window.bitemSystemAPI={}); if(Array.isArray(api.stateRows)&&api.stateRows.length)return true; if(location.protocol==='file:'||api.__v16Loading)return false; api.__v16Loading=true; try{const headers={'content-type':'application/json'}; try{const t=localStorage.getItem('ccc_bitem_auth_token')||''; if(t)headers.authorization='Bearer '+t;}catch(e){} const res=await fetch('/api/bitem/state?include_removed=1&limit=50000&t='+Date.now(),{headers,cache:'no-store'}); const data=await res.json().catch(()=>({})); if(res.ok&&Array.isArray(data.rows)){api.stateRows=data.rows; api.stateKpi=data.kpi||{}; api.total=Number(data.total||data.rows.length||0); window.__BITEM_D1_FULL_READY=true; return true;}}catch(e){console.warn('[V16] D1 punch load skipped:',e.message||e);}finally{api.__v16Loading=false;} return false;}
   function rerender(){try{if(typeof refresh==='function')refresh(true);}catch(e){} try{repaintStageControl();}catch(e){}}
@@ -8252,6 +8252,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     const specialData=specialBaseTpData();
     const out=oldRenderStagesControl?oldRenderStagesControl.call(this,specialData):undefined;
     setTimeout(()=>{try{
+      if(window.__V46_BITEM_D1_REQUEST_CONTROLLER__||window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__)return;
       const s=stageBTotals();
       const box=document.getElementById('bPunchControlBoxes'); if(box&&typeof controlPunchBox==='function')box.innerHTML=controlPunchBox('CNS B Punch',s.cns,'var(--orange)')+controlPunchBox('QC Return B Punch',s.ret,'var(--accent2)');
       const p=document.getElementById('bPunchTypeChart'); if(p&&typeof miniHbar==='function')p.innerHTML=miniHbar([['CNS',s.rows.filter(r=>actionParty(r)==='CNS').length],['ENG',s.rows.filter(r=>actionParty(r)==='ENG').length]],'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))');
@@ -8684,6 +8685,8 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   var stageAbort = null;
   var stageTimer = null;
   var stageApplying = false;
+  var stageInFlightKey = '';
+  var stageInFlightPromise = null;
 
   function controlBox(title, obj, color, loading){
     if (loading) {
@@ -8801,12 +8804,17 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   function fetchStage(force){
     var key = currentKey();
     if (!force && stageCache.has(key)) { applyStageDataForKey(key, stageCache.get(key), false); return Promise.resolve(stageCache.get(key)); }
-    if (stageAbort) { try { stageAbort.abort(); } catch(e){} }
+    if (stageInFlightPromise && stageInFlightKey === key) {
+      // Same filter is already loading; do not abort/restart. This prevents the Stage Control B Item numbers from flickering.
+      return stageInFlightPromise;
+    }
+    if (stageAbort && stageInFlightKey && stageInFlightKey !== key) { try { stageAbort.abort(); } catch(e){} }
     stageAbort = ('AbortController' in window) ? new AbortController() : null;
     var seq = ++stageSeq;
     applyStageDataForKey(key, stageCache.get(key) || null, !stageCache.has(key));
-    var p = new URLSearchParams(key); p.set('_v46', Date.now());
-    return fetch('/api/bitem/stage-control?' + p.toString(), { headers: tokenHeaders(), cache:'no-store', signal: stageAbort ? stageAbort.signal : undefined })
+    var p = new URLSearchParams(key); p.set('_v48', Date.now());
+    stageInFlightKey = key;
+    stageInFlightPromise = fetch('/api/bitem/stage-control?' + p.toString(), { headers: tokenHeaders(), cache:'no-store', signal: stageAbort ? stageAbort.signal : undefined })
       .then(function(r){ return r.text().then(function(t){
         var j; try { j = JSON.parse(t); } catch(e){ throw new Error('stage-control non-JSON: '+t.slice(0,120)); }
         if (!r.ok || !j.ok) throw new Error(j && j.error ? j.error : ('HTTP '+r.status));
@@ -8815,11 +8823,19 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
         applyStageDataForKey(key, j, false);
         return j;
       }); })
-      .catch(function(e){ if (!(e && e.name === 'AbortError')) console.warn('V46 Stage Control D1 failed:', e && e.message || e); if (key === currentKey()) reconcileStage(); });
+      .catch(function(e){ if (!(e && e.name === 'AbortError')) console.warn('V48 Stage Control D1 failed:', e && e.message || e); if (key === currentKey()) reconcileStage(); })
+      .then(function(j){
+        if (stageInFlightKey === key) { stageInFlightKey = ''; stageInFlightPromise = null; }
+        return j;
+      }, function(e){
+        if (stageInFlightKey === key) { stageInFlightKey = ''; stageInFlightPromise = null; }
+        throw e;
+      });
+    return stageInFlightPromise;
   }
   function scheduleStage(force, delay){ clearTimeout(stageTimer); stageTimer = setTimeout(function(){ fetchStage(!!force); }, delay == null ? 80 : delay); }
   window.refreshStageControlBItemD1 = function(force){ return fetchStage(!!force); };
-  window.refreshStagePendingReinstScopeD1 = function(force){ return fetchStage(!!force); };
+  window.refreshStagePendingReinstScopeD1 = function(force){ return fetchStage(false); };
 
   function onFilterChanged(){
     clearDashboardCaches();
@@ -8880,12 +8896,8 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
       el.__v46BitemKpiObs = true;
       new MutationObserver(function(){ if (kpiApplying) return; setTimeout(reconcileKpi, 0); }).observe(el, {childList:true, subtree:false});
     });
-    ['bPunchControlBoxes','bPunchTypeChart','bPunchMatChart','reinstPendingCount','reinstPendingTable'].forEach(function(id){
-      var el = document.getElementById(id);
-      if (!el || el.__v46StageObs) return;
-      el.__v46StageObs = true;
-      new MutationObserver(function(){ if (stageApplying || !isStageControlVisible()) return; setTimeout(reconcileStage, 0); }).observe(el, {childList:true, subtree:true, characterData:true});
-    });
+    // V48: Stage Control B Item has a single owner now (the request controller). Do not attach a MutationObserver
+    // that re-applies old values on every DOM change; renderStagesControl already calls reconcileStage once.
   }
   function boot(){
     patchFilters(); patchRenderers(); observeCurrentAreas();
@@ -8961,7 +8973,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
         hardInvalidate();
         try { if (typeof window.refreshDashboardBItemKpi === 'function') window.refreshDashboardBItemKpi(true); } catch(e) {}
         try { if (typeof window.refreshStageControlBItemD1 === 'function') window.refreshStageControlBItemD1(true); } catch(e) {}
-        try { if (typeof window.refreshStagePendingReinstScopeD1 === 'function') window.refreshStagePendingReinstScopeD1(true); } catch(e) {}
+        // V48: pending table uses the same stage-control endpoint, so do not fire a second forced request.
       }
     }, 40);
   }
@@ -9058,5 +9070,32 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   }, true);
 
   setTimeout(function(){ hardInvalidate(); afterFilterChanged('force'); }, 300);
+})();
+</script>
+
+
+<!-- === V48 Stage Control B Item Single Owner / No Flicker === -->
+<script id="v48-stage-control-bitem-single-owner">
+(function(){
+  if(window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__) return;
+  window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__ = true;
+  // Light background warm-up for the common contractor filters. It does not render anything by itself.
+  function tokenHeaders(){
+    var h={'Accept':'application/json'};
+    try{var t=localStorage.getItem('ccc_bitem_auth_token')||localStorage.getItem('ccc_auth_token')||localStorage.getItem('cccToken')||''; if(t)h.Authorization='Bearer '+t;}catch(e){}
+    return h;
+  }
+  function warmStage(contractor){
+    try{
+      var p=new URLSearchParams(); p.set('contractor', contractor); p.set('_warm','v48');
+      fetch('/api/bitem/stage-control?'+p.toString(), {headers:tokenHeaders(), cache:'no-store'}).catch(function(){});
+    }catch(e){}
+  }
+  function bootWarm(){
+    setTimeout(function(){ warmStage('ALL'); }, 700);
+    setTimeout(function(){ warmStage('CCC'); }, 1200);
+    setTimeout(function(){ warmStage('JGC Direct MP'); }, 1700);
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', bootWarm); else bootWarm();
 })();
 </script>
