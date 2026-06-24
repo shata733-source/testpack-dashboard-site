@@ -2,30 +2,6 @@ import { json, requirePagePermission } from '../../_shared/auth.js';
 import { assertDB, clean } from '../../_shared/bitem.js';
 import { handleSave } from './save.js';
 
-
-// V55: short server-side cache to protect D1 when many users open the same B Item page.
-// Permission is still checked on every request; only the repeated DB read is skipped for a few seconds.
-const STATE_CACHE = globalThis.__BITEM_STATE_CACHE__ || (globalThis.__BITEM_STATE_CACHE__ = new Map());
-const STATE_TTL_MS = 3500;
-const STATE_CACHE_MAX = 120;
-function cacheKeyFromUrl(url) {
-  const keys = ['limit','pageSize','offset','include_removed','q','contractor','area','stage','final_status'];
-  return keys.map(k => `${k}=${url.searchParams.get(k) || ''}`).join('&');
-}
-function cacheGet(key) {
-  const hit = STATE_CACHE.get(key);
-  if (!hit) return null;
-  if (Date.now() - hit.ts > STATE_TTL_MS) { STATE_CACHE.delete(key); return null; }
-  return hit.data;
-}
-function cacheSet(key, data) {
-  if (STATE_CACHE.size >= STATE_CACHE_MAX) {
-    const first = STATE_CACHE.keys().next().value;
-    if (first) STATE_CACHE.delete(first);
-  }
-  STATE_CACHE.set(key, { ts: Date.now(), data });
-}
-
 async function ensureEditTables(env) {
   try {
     await env.DB.prepare(`CREATE TABLE IF NOT EXISTS bitem_user_edits (
@@ -121,19 +97,11 @@ export async function onRequestGet(context) {
     const auth = await requirePagePermission(context, 'bitem', 'view');
     if (auth.error) return auth.error;
 
-    const noCache = url.searchParams.get('no_cache') === '1' || url.searchParams.get('force') === '1';
-    const cacheKey = cacheKeyFromUrl(url);
-    if (!noCache) {
-      const cached = cacheGet(cacheKey);
-      if (cached) return json({ ...cached, cached: true, cache_ttl_ms: STATE_TTL_MS });
-    }
-
-    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || url.searchParams.get('pageSize') || 100), 1), 300);
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') || url.searchParams.get('pageSize') || 100), 1), 500);
     const offset = Math.max(Number(url.searchParams.get('offset') || 0), 0);
     const { whereSql, binds } = whereFromUrl(url);
 
-    // V55: table-state endpoint stays light and adds a short in-memory cache.
-    // No facets, no KPI, no schema checks, no extra aggregation.
+    // V53: table-state endpoint is now strictly for the current page only.
     // No facets, no KPI, no schema checks, no extra aggregation.
     // This keeps B Item Control light when navigating between pages/dashboard.
     const count = await context.env.DB.prepare(`SELECT COUNT(*) AS n FROM bitem_registry ${whereSql}`).bind(...binds).first();
@@ -148,9 +116,7 @@ export async function onRequestGet(context) {
     `).bind(...binds, limit, offset).all();
 
 
-    const payload = { ok: true, total: count?.n || 0, limit, offset, rows: rows.results || [], cached: false };
-    cacheSet(cacheKey, payload);
-    return json(payload);
+    return json({ ok: true, total: count?.n || 0, limit, offset, rows: rows.results || [] });
   } catch (e) {
     console.error('BITEM_STATE_GET_ERROR', e && (e.stack || e.message || e));
     return json({ ok:false, error:(e && e.message ? e.message : String(e || 'Unknown error')) }, 500);
