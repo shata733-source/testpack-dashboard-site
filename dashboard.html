@@ -835,10 +835,13 @@ html,body{overflow-x:hidden}
 </style>
 
 <script>
-// Multi-page bridge: force this physical page to open the correct old stable route.
+// Physical page bridge: keep this file on dashboard.html and set the internal view once.
 (function(){
   var target='#/dashboard';
-  if(location.hash!==target) location.replace(location.pathname+target);
+  if (location.hash !== target) {
+    try { history.replaceState({route:'dashboard',mode:'employer'}, '', location.pathname + location.search + target); }
+    catch(e) { location.hash = target; }
+  }
 })();
 </script>
 </head>
@@ -2791,49 +2794,7 @@ html,body{overflow-x:hidden}
 </div>
 
 
-<!-- EMPLOYER B ITEM CONTROL VIEW -->
-<div id="bItemControlPage" class="bitem-control-page">
-  <div class="bitem-head">
-    <div>
-      <div class="bitem-title">B Item Control</div>
-      <div class="bitem-sub">Live table generated from the <b>B Item</b> sheet in the same dashboard data file. Columns are displayed in the same sheet order.</div>
-    </div>
-    <div class="bitem-tools">
-      <input id="bItemControlSearch" class="bitem-search" placeholder="Search in B Item table..." oninput="renderBItemControl(true)">
-      <button class="action-btn" type="button" onclick="exportBItemControlTable()">📤 Export B Item</button>
-      <button class="action-btn" type="button" onclick="showEmployerView('dashboard')">↩ Dashboard</button>
-    </div>
-  </div>
-  <div class="bitem-table-card">
-    <div class="tbl-toolbar">
-      <div class="tbl-count" id="bItemControlCount">B Items: --</div>
-      <div class="table-note-fast">Large table is paged for faster navigation.</div>
-    </div>
-    <div class="bitem-table-wrap">
-      <table class="bitem-table" id="bItemControlTable">
-        <thead id="bItemControlHead"></thead>
-        <tbody id="bItemControlBody"></tbody>
-      </table>
-    </div>
-    <div class="bitem-pager">
-      <div class="bitem-pager-left">
-        <button class="pager-btn" type="button" onclick="bItemPageMove(-1)">Prev</button>
-        <button class="pager-btn" type="button" onclick="bItemPageMove(1)">Next</button>
-        <span class="bitem-info" id="bItemControlPageInfo">Page --</span>
-      </div>
-      <div class="bitem-pager-right">
-        <span class="bitem-info">Rows/Page</span>
-        <select class="pager-size" id="bItemControlPageSize" onchange="renderBItemControl(true)">
-          <option value="50">50</option>
-          <option value="100" selected>100</option>
-          <option value="200">200</option>
-          <option value="500">500</option>
-        </select>
-      </div>
-    </div>
-  </div>
-</div>
-
+<!-- Embedded B Item Control removed from dashboard physical page. Use /bitem.html for B Item Control. -->
 </div><!-- /dashboardApp -->
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
@@ -8440,92 +8401,19 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   body.v12-app-mode #bItemMonitoringPage.active{top:var(--v12-header-h)!important;left:var(--v12-sidebar-w)!important;}
 </style>
 <script id="mp-v4-shape-hard-fix-js">
+/* Disabled in physical-page cleanup: this old block ran hardRoute() repeatedly and rewrote paths/DOM every 2.5s. */
 (function(){
-  if(window.__MP_V4_SHAPE_HARD_FIX__) return;
-  window.__MP_V4_SHAPE_HARD_FIX__ = true;
-  function q(s,r){return (r||document).querySelector(s)}
-  function qa(s,r){return Array.from((r||document).querySelectorAll(s))}
-  function path(){return String(location.pathname||'').toLowerCase()}
-  function isBitemPage(){var p=path().replace(/\/+$/,'');return p.endsWith('/bitem') || p.endsWith('/bitem.html') || p.includes('bitem.html')}
-  function isMonitorPage(){var p=path().replace(/\/+$/,'');return p.endsWith('/bitem-monitoring') || p.endsWith('/bitem-monitoring.html') || p.includes('bitem-monitoring')}
-  function isDashPage(){var p=path().replace(/\/+$/,'');return (p.endsWith('/dashboard') || p.endsWith('/dashboard.html') || p.includes('dashboard')) && !isBitemPage() && !isMonitorPage()}
-  function goHome(){ location.href='/projects.html'; }
-  window.mpGoHome = goHome;
-
-  function addHeaderHome(){
-    var hdr=q('.hdr'); if(!hdr || q('#mpHardHomeBtn')) return;
+  window.__MP_V4_SHAPE_HARD_FIX_DISABLED__ = true;
+  window.mpGoHome = function(){ location.href='/projects.html'; };
+  function addHome(){
+    var hdr=document.querySelector('.hdr'); if(!hdr || document.getElementById('mpHardHomeBtn')) return;
     var btn=document.createElement('button');
     btn.id='mpHardHomeBtn'; btn.type='button'; btn.className='action-btn'; btn.innerHTML='🏠 Home';
-    btn.onclick=goHome;
-    var live=q('.live-status');
+    btn.onclick=window.mpGoHome;
+    var live=document.querySelector('.live-status');
     if(live) hdr.insertBefore(btn, live); else hdr.appendChild(btn);
   }
-
-  function disableOldMenus(){
-    ['adminMenuWrap','globalEmployerMenu','sidebarMenuHost','v10SideMenu','v12SideNav'].forEach(function(id){var e=document.getElementById(id); if(e)e.style.display='none';});
-  }
-
-  function cleanBitemTools(){
-    var tools=q('#bItemControlPage .bitem-tools'); if(!tools) return;
-    // remove any dashboard/back-to-dashboard button inside B Item Control
-    qa('button',tools).forEach(function(b){ if(/Dashboard/i.test((b.textContent||''))) b.remove(); });
-    // keep one Reload B Item only
-    var reloads=qa('button',tools).filter(function(b){return /Reload B Item/i.test((b.textContent||''));});
-    reloads.forEach(function(b,i){ if(i>0) b.remove(); });
-    if(!reloads.length){
-      var btn=document.createElement('button'); btn.type='button'; btn.className='action-btn'; btn.id='mpSingleReloadBItem'; btn.textContent='↻ Reload B Item';
-      btn.onclick=function(){ if(window.bitemReloadState) window.bitemReloadState(); else if(window.renderBItemControl) window.renderBItemControl(true); };
-      var exp=qa('button',tools).find(function(b){return /Export B Item/i.test((b.textContent||''));});
-      if(exp) tools.insertBefore(btn,exp); else tools.appendChild(btn);
-    }
-  }
-
-  function ensureMonitoringPageThenShow(){
-    try{ sessionStorage.setItem('cccAccessMode','employer'); }catch(e){}
-    try{ if(typeof ensureAdminMonitoringPage==='function') ensureAdminMonitoringPage(); }catch(e){}
-    try{ if(typeof showEmployerView==='function') showEmployerView('monitoring',{fromRoute:true,replace:true}); }catch(e){}
-    try{ if(typeof renderBItemMonitoring==='function') renderBItemMonitoring(); }catch(e){}
-    var app=q('#dashboardApp'); if(app) app.style.display='flex';
-    var ph=q('#portalHome'); if(ph) ph.style.display='none';
-    var pl=q('#portalLogin'); if(pl) pl.style.display='none';
-    document.body.classList.add('v12-app-mode');
-  }
-
-  function ensureBitemThenShow(){
-    try{ sessionStorage.setItem('cccAccessMode','employer'); }catch(e){}
-    try{ if(typeof showEmployerView==='function') showEmployerView('bitem',{fromRoute:true,replace:true}); }catch(e){}
-    var app=q('#dashboardApp'); if(app) app.style.display='flex';
-    var ph=q('#portalHome'); if(ph) ph.style.display='none';
-    var pl=q('#portalLogin'); if(pl) pl.style.display='none';
-    document.body.classList.add('v12-app-mode');
-    cleanBitemTools();
-  }
-
-  function ensureDashboardThenShow(){
-    try{ sessionStorage.setItem('cccAccessMode','employer'); }catch(e){}
-    try{ if(typeof showEmployerView==='function') showEmployerView('dashboard',{fromRoute:true,replace:true}); }catch(e){}
-    var app=q('#dashboardApp'); if(app) app.style.display='flex';
-    var ph=q('#portalHome'); if(ph) ph.style.display='none';
-    var pl=q('#portalLogin'); if(pl) pl.style.display='none';
-    document.body.classList.add('v12-app-mode');
-  }
-
-  function hardRoute(){
-    addHeaderHome(); disableOldMenus(); cleanBitemTools();
-    if(isMonitorPage()){
-      if(location.hash !== '#/monitoring') { try{ history.replaceState({route:'monitoring',mode:'employer'},'', '/bitem-monitoring#/monitoring'); }catch(e){} }
-      ensureMonitoringPageThenShow();
-    } else if(isBitemPage()){
-      if(location.hash !== '#/bitem') { try{ history.replaceState({route:'bitem',mode:'employer'},'', '/bitem#/bitem'); }catch(e){} }
-      ensureBitemThenShow();
-    } else if(isDashPage()){
-      if(location.hash !== '#/dashboard') { try{ history.replaceState({route:'dashboard',mode:'employer'},'', '/dashboard#/dashboard'); }catch(e){} }
-      ensureDashboardThenShow();
-    }
-  }
-  document.addEventListener('DOMContentLoaded',function(){ setTimeout(hardRoute,50); setTimeout(hardRoute,500); setTimeout(hardRoute,1500); setTimeout(hardRoute,3500); });
-  window.addEventListener('load',function(){ setTimeout(hardRoute,100); setTimeout(hardRoute,1200); });
-  setInterval(hardRoute,2500);
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', addHome); else addHome();
 })();
 </script>
 
@@ -9423,5 +9311,21 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 
   invalidate();
   setTimeout(function(){ turboRefresh(true); }, 80);
+})();
+</script>
+
+<script id="dashboard-no-heavy-bitem-state-v1">
+(function(){
+  if (window.__DASHBOARD_NO_HEAVY_BITEM_STATE_V1__) return;
+  window.__DASHBOARD_NO_HEAVY_BITEM_STATE_V1__ = true;
+  const nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  if (!nativeFetch) return;
+  window.fetch = function(input, init){
+    const raw = (typeof input === 'string') ? input : (input && input.url) || '';
+    if (/\/api\/bitem\/state/i.test(raw) && /(?:[?&]limit=50000|[?&]include_removed=1)/i.test(raw)) {
+      return Promise.resolve(new Response(JSON.stringify({ok:true,rows:[],items:[],total:0,skipped:'dashboard_no_heavy_bitem_state'}), {status:200,headers:{'content-type':'application/json'}}));
+    }
+    return nativeFetch(input, init);
+  };
 })();
 </script>

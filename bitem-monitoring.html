@@ -835,10 +835,13 @@ html,body{overflow-x:hidden}
 </style>
 
 <script>
-// Multi-page bridge: force this physical page to open the correct old stable route.
+// Physical page bridge: keep this file on bitem-monitoring.html and set the internal view once.
 (function(){
-  var target='#/bitem-monitoring';
-  if(location.hash!==target) location.replace(location.pathname+target);
+  var target='#/monitoring';
+  if (location.hash !== target) {
+    try { history.replaceState({route:'monitoring',mode:'employer'}, '', location.pathname + location.search + target); }
+    catch(e) { location.hash = target; }
+  }
 })();
 </script>
 </head>
@@ -8429,91 +8432,18 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   body.v12-app-mode #bItemMonitoringPage.active{top:var(--v12-header-h)!important;left:var(--v12-sidebar-w)!important;}
 </style>
 <script id="mp-v4-shape-hard-fix-js">
+/* Disabled in physical-page cleanup: this old block ran hardRoute() repeatedly and rewrote paths/DOM every 2.5s. */
 (function(){
-  if(window.__MP_V4_SHAPE_HARD_FIX__) return;
-  window.__MP_V4_SHAPE_HARD_FIX__ = true;
-  function q(s,r){return (r||document).querySelector(s)}
-  function qa(s,r){return Array.from((r||document).querySelectorAll(s))}
-  function path(){return String(location.pathname||'').toLowerCase()}
-  function isBitemPage(){var p=path().replace(/\/+$/,'');return p.endsWith('/bitem') || p.endsWith('/bitem.html') || p.includes('bitem.html')}
-  function isMonitorPage(){var p=path().replace(/\/+$/,'');return p.endsWith('/bitem-monitoring') || p.endsWith('/bitem-monitoring.html') || p.includes('bitem-monitoring')}
-  function isDashPage(){var p=path().replace(/\/+$/,'');return (p.endsWith('/dashboard') || p.endsWith('/dashboard.html') || p.includes('dashboard')) && !isBitemPage() && !isMonitorPage()}
-  function goHome(){ location.href='/projects.html'; }
-  window.mpGoHome = goHome;
-
-  function addHeaderHome(){
-    var hdr=q('.hdr'); if(!hdr || q('#mpHardHomeBtn')) return;
+  window.__MP_V4_SHAPE_HARD_FIX_DISABLED__ = true;
+  window.mpGoHome = function(){ location.href='/projects.html'; };
+  function addHome(){
+    var hdr=document.querySelector('.hdr'); if(!hdr || document.getElementById('mpHardHomeBtn')) return;
     var btn=document.createElement('button');
     btn.id='mpHardHomeBtn'; btn.type='button'; btn.className='action-btn'; btn.innerHTML='🏠 Home';
-    btn.onclick=goHome;
-    var live=q('.live-status');
+    btn.onclick=window.mpGoHome;
+    var live=document.querySelector('.live-status');
     if(live) hdr.insertBefore(btn, live); else hdr.appendChild(btn);
   }
-
-  function disableOldMenus(){
-    ['adminMenuWrap','globalEmployerMenu','sidebarMenuHost','v10SideMenu','v12SideNav'].forEach(function(id){var e=document.getElementById(id); if(e)e.style.display='none';});
-  }
-
-  function cleanBitemTools(){
-    var tools=q('#bItemControlPage .bitem-tools'); if(!tools) return;
-    // remove any dashboard/back-to-dashboard button inside B Item Control
-    qa('button',tools).forEach(function(b){ if(/Dashboard/i.test((b.textContent||''))) b.remove(); });
-    // keep one Reload B Item only
-    var reloads=qa('button',tools).filter(function(b){return /Reload B Item/i.test((b.textContent||''));});
-    reloads.forEach(function(b,i){ if(i>0) b.remove(); });
-    if(!reloads.length){
-      var btn=document.createElement('button'); btn.type='button'; btn.className='action-btn'; btn.id='mpSingleReloadBItem'; btn.textContent='↻ Reload B Item';
-      btn.onclick=function(){ if(window.bitemReloadState) window.bitemReloadState(); else if(window.renderBItemControl) window.renderBItemControl(true); };
-      var exp=qa('button',tools).find(function(b){return /Export B Item/i.test((b.textContent||''));});
-      if(exp) tools.insertBefore(btn,exp); else tools.appendChild(btn);
-    }
-  }
-
-  function ensureMonitoringPageThenShow(){
-    try{ sessionStorage.setItem('cccAccessMode','employer'); }catch(e){}
-    try{ if(typeof ensureAdminMonitoringPage==='function') ensureAdminMonitoringPage(); }catch(e){}
-    try{ if(typeof showEmployerView==='function') showEmployerView('monitoring',{fromRoute:true,replace:true}); }catch(e){}
-    try{ if(typeof renderBItemMonitoring==='function') renderBItemMonitoring(); }catch(e){}
-    var app=q('#dashboardApp'); if(app) app.style.display='flex';
-    var ph=q('#portalHome'); if(ph) ph.style.display='none';
-    var pl=q('#portalLogin'); if(pl) pl.style.display='none';
-    document.body.classList.add('v12-app-mode');
-  }
-
-  function ensureBitemThenShow(){
-    try{ sessionStorage.setItem('cccAccessMode','employer'); }catch(e){}
-    try{ if(typeof showEmployerView==='function') showEmployerView('bitem',{fromRoute:true,replace:true}); }catch(e){}
-    var app=q('#dashboardApp'); if(app) app.style.display='flex';
-    var ph=q('#portalHome'); if(ph) ph.style.display='none';
-    var pl=q('#portalLogin'); if(pl) pl.style.display='none';
-    document.body.classList.add('v12-app-mode');
-    cleanBitemTools();
-  }
-
-  function ensureDashboardThenShow(){
-    try{ sessionStorage.setItem('cccAccessMode','employer'); }catch(e){}
-    try{ if(typeof showEmployerView==='function') showEmployerView('dashboard',{fromRoute:true,replace:true}); }catch(e){}
-    var app=q('#dashboardApp'); if(app) app.style.display='flex';
-    var ph=q('#portalHome'); if(ph) ph.style.display='none';
-    var pl=q('#portalLogin'); if(pl) pl.style.display='none';
-    document.body.classList.add('v12-app-mode');
-  }
-
-  function hardRoute(){
-    addHeaderHome(); disableOldMenus(); cleanBitemTools();
-    if(isMonitorPage()){
-      if(location.hash !== '#/monitoring') { try{ history.replaceState({route:'monitoring',mode:'employer'},'', '/bitem-monitoring#/monitoring'); }catch(e){} }
-      ensureMonitoringPageThenShow();
-    } else if(isBitemPage()){
-      if(location.hash !== '#/bitem') { try{ history.replaceState({route:'bitem',mode:'employer'},'', '/bitem#/bitem'); }catch(e){} }
-      ensureBitemThenShow();
-    } else if(isDashPage()){
-      if(location.hash !== '#/dashboard') { try{ history.replaceState({route:'dashboard',mode:'employer'},'', '/dashboard#/dashboard'); }catch(e){} }
-      ensureDashboardThenShow();
-    }
-  }
-  document.addEventListener('DOMContentLoaded',function(){ setTimeout(hardRoute,50); setTimeout(hardRoute,500); setTimeout(hardRoute,1500); setTimeout(hardRoute,3500); });
-  window.addEventListener('load',function(){ setTimeout(hardRoute,100); setTimeout(hardRoute,1200); });
-  setInterval(hardRoute,2500);
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', addHome); else addHome();
 })();
 </script>
