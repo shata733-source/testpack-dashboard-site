@@ -12,6 +12,26 @@ async function handlePost(context) {
 
   const adminUser = clean(env.ADMIN_USERNAME || 'ccc').toLowerCase();
   const adminPass = clean(env.ADMIN_PASSWORD || 'ccc2026');
+
+  // V70 FAST ADMIN LOGIN:
+  // Automation and admin login must not touch D1. D1 is still used for normal
+  // user credential validation below, but the built-in admin can get a signed
+  // token directly from environment secrets. This prevents Cloudflare 1102 CPU
+  // errors during Selenium/Supabase sync login.
+  if (username === adminUser && password === adminPass) {
+    const perms = normalizePagePermissions('admin');
+    const admin = userForClient({
+      username: adminUser,
+      display_name: env.ADMIN_DISPLAY_NAME || 'Mohamed Shata',
+      role: 'admin',
+      is_active: 1,
+      view_pages: perms.view_pages,
+      edit_pages: perms.edit_pages
+    });
+    const token = await createToken(env, admin);
+    return json({ ok: true, token, user: admin, source: 'fast_admin_env' });
+  }
+
   let user = null;
   let dbUserExists = false;
 

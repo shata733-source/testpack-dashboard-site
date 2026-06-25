@@ -8525,7 +8525,8 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   }
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(hardRoute,50); setTimeout(hardRoute,500); setTimeout(hardRoute,1500); setTimeout(hardRoute,3500); });
   window.addEventListener('load',function(){ setTimeout(hardRoute,100); setTimeout(hardRoute,1200); });
-  setInterval(hardRoute,2500);
+  // V70: disabled old 2.5s route polling; route is handled by explicit navigation.
+  // setInterval(hardRoute,2500);
 })();
 </script>
 
@@ -9196,5 +9197,104 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   window.bitemLoadSystemState = async function(){
     return { ok: true, rows: [], total: 0, skipped: true, source: 'v59_dashboard_no_full_state' };
   };
+})();
+</script>
+
+
+<script id="v70-dashboard-performance-guard">
+/* V70 — Dashboard performance guard
+   - Coalesces repeated refresh calls caused by stacked legacy patches.
+   - Adds in-flight de-duplication and a short cache for Supabase KPI/stage endpoints.
+   - Warms the common contractor aggregates in the background.
+   This does not change calculation logic or B Item data ownership. */
+(function(){
+  if(window.__V70_DASHBOARD_PERFORMANCE_GUARD__) return;
+  window.__V70_DASHBOARD_PERFORMANCE_GUARD__ = true;
+
+  function C(v){return v==null?'':String(v).replace(/\s+/g,' ').trim();}
+  function cloneResponse(text,status,headers){
+    return new Response(text,{status:status||200,headers:headers||{'content-type':'application/json; charset=utf-8','x-v70-cache':'1'}});
+  }
+  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  var apiCache = new Map();
+  var apiInflight = new Map();
+  var API_TTL = 120000;
+  function shouldCache(url){
+    return /\/api\/bitem\/(kpi|stage-control)\?/i.test(String(url||''));
+  }
+  function cacheKey(url){
+    try{
+      var u = new URL(String(url), location.origin);
+      u.searchParams.delete('_v46'); u.searchParams.delete('_v47'); u.searchParams.delete('_v48'); u.searchParams.delete('_v49');
+      u.searchParams.delete('_warm'); u.searchParams.delete('t');
+      return u.pathname + '?' + u.searchParams.toString();
+    }catch(e){return String(url||'');}
+  }
+  if(nativeFetch && !nativeFetch.__v70PerfWrapped){
+    var wrapped = function(input, init){
+      var raw = (typeof input === 'string') ? input : ((input && input.url) || '');
+      if(shouldCache(raw)){
+        var key = cacheKey(raw);
+        var hit = apiCache.get(key);
+        if(hit && Date.now()-hit.time < API_TTL){
+          return Promise.resolve(cloneResponse(hit.text, hit.status, hit.headers));
+        }
+        if(apiInflight.has(key)){
+          return apiInflight.get(key).then(function(hit){return cloneResponse(hit.text, hit.status, hit.headers);});
+        }
+        var p = nativeFetch(input, init).then(function(resp){
+          return resp.text().then(function(text){
+            var headers = {'content-type': resp.headers.get('content-type') || 'application/json; charset=utf-8','x-v70-cache':'stored'};
+            var item = {time:Date.now(), text:text, status:resp.status, headers:headers};
+            if(resp.ok) apiCache.set(key,item);
+            return item;
+          });
+        }).finally(function(){apiInflight.delete(key);});
+        apiInflight.set(key,p);
+        return p.then(function(item){return cloneResponse(item.text,item.status,item.headers);});
+      }
+      return nativeFetch(input, init);
+    };
+    wrapped.__v70PerfWrapped = true;
+    window.fetch = wrapped;
+  }
+
+  function forceCommonWarm(){
+    if(!nativeFetch) return;
+    var headers = {'Accept':'application/json'};
+    try{var t=localStorage.getItem('ccc_bitem_auth_token')||''; if(t)headers.Authorization='Bearer '+t;}catch(e){}
+    ['ALL','CCC','JGC Direct MP'].forEach(function(c,i){
+      setTimeout(function(){
+        try{
+          var p = new URLSearchParams(); p.set('contractor',c);
+          fetch('/api/bitem/kpi?'+p.toString(),{headers:headers,cache:'no-store'}).catch(function(){});
+          fetch('/api/bitem/stage-control?'+p.toString(),{headers:headers,cache:'no-store'}).catch(function(){});
+        }catch(e){}
+      }, 500 + i*450);
+    });
+  }
+
+  // Coalesce repeated refresh calls. This avoids multiple full re-renders when a filter click
+  // triggers old setF wrappers + V46/V47 wrappers + direct DOM listeners together.
+  try{
+    if(typeof refresh === 'function' && !refresh.__v70Coalesced){
+      var baseRefresh = refresh;
+      var timer = null;
+      var immediatePending = false;
+      refresh = window.refresh = function(immediate){
+        immediatePending = immediatePending || !!immediate;
+        clearTimeout(timer);
+        timer = setTimeout(function(){
+          var goNow = immediatePending;
+          immediatePending = false;
+          baseRefresh.call(window, goNow);
+        }, immediate ? 35 : 90);
+      };
+      refresh.__v70Coalesced = true;
+    }
+  }catch(e){}
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',forceCommonWarm); else forceCommonWarm();
+  window.addEventListener('focus', function(){ setTimeout(forceCommonWarm, 300); });
 })();
 </script>

@@ -1,11 +1,13 @@
-import { json, verifyToken, getDbUser } from '../../_shared/auth.js';
+import { json, verifyToken, getDbUser, userForClient } from '../../_shared/auth.js';
 
 async function handleGet(context) {
   const auth = context.request.headers.get('authorization') || '';
   const token = auth.toLowerCase().startsWith('bearer ') ? auth.slice(7).trim() : '';
   const tokenUser = await verifyToken(context.env, token);
   if (!tokenUser) return json({ ok: false, user: null }, 401);
-  const user = await getDbUser(context.env, tokenUser);
+  const adminUser = String(context.env.ADMIN_USERNAME || 'ccc').toLowerCase();
+  const uname = String(tokenUser.username || tokenUser.sub || '').toLowerCase();
+  const user = (uname === adminUser && String(tokenUser.role || '').toLowerCase() === 'admin') ? userForClient(tokenUser) : await getDbUser(context.env, tokenUser);
   if (!user) return json({ ok: false, user: null, error: 'Unauthorized or disabled account' }, 401);
   return json({ ok: true, user });
 }

@@ -242,14 +242,13 @@ export async function verifyToken(env, token) {
 }
 
 export async function getDbUser(env, tokenUser) {
-  if (!env || !env.DB || !tokenUser) return tokenUser ? userForClient(tokenUser) : null;
-  await ensureAuthTables(env);
-  const username = String(tokenUser.username || tokenUser.sub || '').toLowerCase();
-  if (!username) return null;
-  const row = await env.DB.prepare('SELECT username, display_name, role, is_active, view_pages, edit_pages, updated_at, last_login_at FROM users WHERE username=?').bind(username).first();
-  if (!row) return userForClient(tokenUser);
-  if (Number(row.is_active) !== 1) return null;
-  return userForClient(row);
+  // V70 STABILITY:
+  // After a user is logged in, API authorization trusts the signed JWT payload.
+  // This keeps B Item / dashboard API calls away from D1, preventing D1 auth checks
+  // from throttling Supabase-backed B Item operations. User updates still use D1
+  // when saving users, and fresh logins still read D1 for non-admin accounts.
+  if (!tokenUser) return null;
+  return userForClient(tokenUser);
 }
 
 export async function ensureBuiltInAdmin(env, username, displayName = 'Mohamed Shata') {
