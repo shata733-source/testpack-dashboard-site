@@ -4841,7 +4841,7 @@ function addAgg(obj,key,stage,val){
 
 
 const DASHBOARD_CACHE_KEY='testpackDashboard.originalScope.lastUpdate.v18.bItemSource';
-const LIVE_DATA_URL='https://raw.githubusercontent.com/shata733-source/testpack-data/main/dashboard_data.js';
+const LIVE_DATA_URL='/api/dashboard-data'; // V74: Cloudflare edge-cached proxy for faster dashboard_data.js load
 const LIVE_REFRESH_MS=60*60*1000;
 // Baseline reset key: this version treats the first loaded live data after deployment as the new baseline.
 const LIVE_LAST_SNAPSHOT_KEY='testpackDashboard.originalScope.live.lastSnapshot.v4.bItemSource';
@@ -5937,8 +5937,11 @@ async function fetchAndApplyLiveData(options){
   const before=currentDashboardSnapshot('before-live-refresh');
   const previousStored=await loadStoredLiveSnapshot();
   try{
-    const url=LIVE_DATA_URL+'?v='+Date.now()+'&rnd='+Math.random().toString(36).slice(2);
-    const res=await fetch(url,{cache:'no-store'});
+    const liveIsLocalProxy=/^\/api\/dashboard-data(?:$|[?#])/i.test(String(LIVE_DATA_URL||''));
+    const url=liveIsLocalProxy
+      ? (LIVE_DATA_URL+'?b='+Math.floor(Date.now()/60000))
+      : (LIVE_DATA_URL+'?v='+Date.now()+'&rnd='+Math.random().toString(36).slice(2));
+    const res=await fetch(url, liveIsLocalProxy ? {cache:'default'} : {cache:'no-store'});
     if(!res.ok)throw new Error('HTTP '+res.status);
     const code=await res.text();
     (0,eval)(normalizeLiveDataCodeForEval(code));
@@ -6401,13 +6404,16 @@ async function bootDashboard(){
   await loadUpdateDiffBaseline();
   setupDeltaDateInput();
   onDeltaModeChanged();
-  // V73: show a valid cached snapshot immediately when available, then replace it with live data.
-  // Empty/stale zero snapshots are ignored by applyDashboardSnapshot().
+  // V74: show a valid IndexedDB snapshot immediately. If it exists, live refresh runs
+  // in the background instead of blocking the first usable dashboard screen.
+  let hadSaved=false;
   try{
-    const hadSaved=await loadDashboardSnapshot();
+    hadSaved=await loadDashboardSnapshot();
     if(hadSaved){syncLiveFilterUi(); invalidateAllDashboardFilterCaches(); refresh(true);}
   }catch(e){console.warn('Saved dashboard preload skipped:',e);}
-  await fetchAndApplyLiveData({initial:true});
+  const livePromise=fetchAndApplyLiveData({initial:true});
+  if(!hadSaved) await livePromise;
+  else livePromise.catch(e=>console.warn('Background live dashboard refresh failed:',e));
   scheduleLiveRefresh();
 }
 initPortalAccess();
@@ -9424,6 +9430,240 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 
   // If the page opened with /dashboard#/dashboard, repaint after live data is ready without needing a manual filter click.
   setTimeout(function(){if(hasTpRows()){inv(); try{refresh(true);}catch(e){}}},1800);
+})();
+</script>
+
+
+
+<script id="v74-dashboard-data-and-filter-speed">
+/* V74 Dashboard data + filter speed
+   - Uses cached row metadata for B Item / Punch / Material filters.
+   - Caches heavy row selections per current sidebar filter.
+   - Keeps tab UI responsive while Punch and Stages Control details render.
+*/
+(function(){
+  if(window.__V74_DASHBOARD_DATA_AND_FILTER_SPEED__) return;
+  window.__V74_DASHBOARD_DATA_AND_FILTER_SPEED__ = true;
+
+  function C(v){ return v == null ? '' : String(v).replace(/\s+/g,' ').trim(); }
+  function U(v){ return C(v).toUpperCase(); }
+  function arr(v){
+    if(Array.isArray(v)) return v.length ? v.map(C).filter(Boolean) : ['ALL'];
+    var s=C(v); return (!s || s==='ALL') ? ['ALL'] : [s];
+  }
+  function isAll(v){ return arr(v).indexOf('ALL') >= 0; }
+  function fObj(){ try { return window.F || F || {}; } catch(e) { return window.F || {}; } }
+  function dataVer(){
+    var dv=0,tp=0,tr=0,br=0,mr=0;
+    try{ dv=window.DATA_VERSION || DATA_VERSION || 0; }catch(e){}
+    try{ tp=Array.isArray(TP)?TP.length:0; }catch(e){}
+    try{ tr=Array.isArray(TEST_PACK_ROWS)?TEST_PACK_ROWS.length:0; }catch(e){}
+    try{ br=Array.isArray(B_ITEM_ROWS)?B_ITEM_ROWS.length:0; }catch(e){}
+    try{ mr=Array.isArray(MAT_ROWS)?MAT_ROWS.length:0; }catch(e){}
+    return [dv,tp,tr,br,mr].join(':');
+  }
+  function filterKey(extra){
+    var f=fObj();
+    return [extra||'',dataVer(),C(f.con||'ALL'),arr(f.areaGrp).join('|'),arr(f.area).join('|'),arr(f.sys).join('|'),arr(f.stage).join('|')].join('§');
+  }
+  function limitCache(m,max){ if(m && m.size>max) m.clear(); }
+  function rowVal(row,names){
+    try{ if(typeof rowValue==='function') return rowValue(row,names); }catch(e){}
+    if(!row) return '';
+    for(var i=0;i<names.length;i++){ var n=names[i]; if(row[n]!==undefined && C(row[n])) return row[n]; }
+    var keys=Object.keys(row), norm=function(x){return U(x).replace(/[^A-Z0-9]/g,'');};
+    for(var j=0;j<names.length;j++){
+      var nn=norm(names[j]);
+      for(var k=0;k<keys.length;k++){ if(norm(keys[k])===nn && C(row[keys[k]])) return row[keys[k]]; }
+    }
+    return '';
+  }
+  function normAreasFast(raw){
+    try{ return (typeof normalizeAreas==='function' ? normalizeAreas(raw) : []).map(U).filter(Boolean); }catch(e){ return []; }
+  }
+  function areaGroupFast(a){ try{ return typeof areaGroupOf==='function' ? areaGroupOf(a) : U(a).charAt(0); }catch(e){ return U(a).charAt(0); } }
+  function areaPassInfo(info, areaVals, areaGrpVals){
+    if(!isAll(areaGrpVals)){
+      if(!info.grps.length || !info.grps.some(function(g){ return areaGrpVals.indexOf(g)>=0; })) return false;
+    }
+    if(!isAll(areaVals)){
+      if(!info.areas.length || !info.areas.some(function(a){ return areaVals.indexOf(a)>=0; })) return false;
+    }
+    return true;
+  }
+
+  function bInfo(r){
+    if(r && r.__v74_bi) return r.__v74_bi;
+    var tp=''; try{ tp = typeof rowTPNo==='function' ? rowTPNo(r) : C(rowVal(r,['TP NUMBER','TP No','TP Number','TestPackNo','Test Pack No'])); }catch(e){ tp=C(rowVal(r,['TP NUMBER','TP No','TP Number','TestPackNo','Test Pack No'])); }
+    var areas=normAreasFast(rowVal(r,['Area','AREA','Drawing Areas']));
+    var grps=Array.from(new Set(areas.map(areaGroupFast).filter(Boolean)));
+    var out={tp:C(tp),tpU:U(tp),areas:areas,grps:grps};
+    try{ Object.defineProperty(r,'__v74_bi',{value:out,configurable:true}); }catch(e){ try{r.__v74_bi=out;}catch(_){} }
+    return out;
+  }
+  function punchInfo(r){
+    if(r && r.__v74_pi) return r.__v74_pi;
+    var tp=''; try{ tp = typeof rowTPNo==='function' ? rowTPNo(r) : C(rowVal(r,['TP NUMBER','TP No','TP Number','TestPackNo','Test Pack No'])); }catch(e){ tp=C(rowVal(r,['TP NUMBER','TP No','TP Number','TestPackNo','Test Pack No'])); }
+    var areas=normAreasFast(rowVal(r,['Area','AREA','Drawing Areas']));
+    var grps=Array.from(new Set(areas.map(areaGroupFast).filter(Boolean)));
+    var stageText=U([rowVal(r,['Construction Stage','Stage','Stages','Current Stage','Punch Stage','Last FMS Stage','CCC Last Stage']),rowVal(r,['Comments','Comment'])].join(' '));
+    var out={tp:C(tp),tpU:U(tp),areas:areas,grps:grps,stageText:stageText,backCleared:stageText.indexOf('BACK PUNCH CLEARED')>=0};
+    try{ Object.defineProperty(r,'__v74_pi',{value:out,configurable:true}); }catch(e){ try{r.__v74_pi=out;}catch(_){} }
+    return out;
+  }
+  function matInfo(r){
+    if(r && r.__v74_mi) return r.__v74_mi;
+    var tp=U(r && r.tp);
+    var areas=normAreasFast(r && r.area);
+    var area=areas[0] || U(r && r.area);
+    var grps=Array.from(new Set((areas.length?areas:[area]).filter(Boolean).map(areaGroupFast)));
+    var out={tp:tp,area:area,areas:areas.length?areas:(area?[area]:[]),grps:grps,sp:Number(r&&r.sp)||0,su:Number(r&&r.su)||0,va:Number(r&&r.va)||0};
+    try{ Object.defineProperty(r,'__v74_mi',{value:out,configurable:true}); }catch(e){ try{r.__v74_mi=out;}catch(_){} }
+    return out;
+  }
+
+  var bCache=new Map(), pCache=new Map(), mRowsCache=new Map(), mTotalsCache=new Map();
+  function clearV74Caches(){ bCache.clear(); pCache.clear(); mRowsCache.clear(); mTotalsCache.clear(); }
+
+  var oldInvalidate = window.__V72_INVALIDATE_FILTER_CACHE__;
+  window.__V72_INVALIDATE_FILTER_CACHE__ = function(){ clearV74Caches(); if(typeof oldInvalidate==='function') return oldInvalidate.apply(this,arguments); };
+
+  var oldB = (typeof bItemRawRowsForFiltered==='function') ? bItemRawRowsForFiltered : window.bItemRawRowsForFiltered;
+  if(oldB){
+    window.bItemRawRowsForFiltered = function(data){
+      var key=filterKey('bitemRows'); if(bCache.has(key)) return bCache.get(key);
+      var base=data || (typeof getFilteredForPunchTpBase==='function' ? getFilteredForPunchTpBase() : (typeof getFiltered==='function'?getFiltered():[]));
+      var tpLookup={}; (base||[]).forEach(function(r){ var tp=C(r&&r.tp); if(tp) tpLookup[tp]=r; });
+      var tpSet=new Set(Object.keys(tpLookup).map(U));
+      var f=fObj(), areaVals=arr(f.area).map(U), areaGrpVals=arr(f.areaGrp).map(U);
+      var source=[]; try{ source=Array.isArray(B_ITEM_ROWS)?B_ITEM_ROWS:[]; }catch(e){}
+      var out=[];
+      for(var i=0;i<source.length;i++){
+        var r=source[i], info=bInfo(r);
+        if(!info.tpU) continue;
+        if(tpSet.size && !tpSet.has(info.tpU)) continue;
+        if(!areaPassInfo(info,areaVals,areaGrpVals)) continue;
+        out.push(r);
+      }
+      var res={rows:out,tpLookup:tpLookup}; bCache.set(key,res); limitCache(bCache,40); return res;
+    };
+    try{ bItemRawRowsForFiltered=window.bItemRawRowsForFiltered; }catch(e){}
+  }
+
+  var oldPunchRaw = (typeof punchRawRowsForFiltered==='function') ? punchRawRowsForFiltered : window.punchRawRowsForFiltered;
+  if(oldPunchRaw){
+    window.punchRawRowsForFiltered = function(data){
+      var key=filterKey('punchRows'); if(pCache.has(key)) return pCache.get(key);
+      var base=(typeof getFilteredForPunchTpBase==='function') ? getFilteredForPunchTpBase() : (data||[]);
+      var tpLookup={}; (base||[]).forEach(function(r){ var tp=C(r&&r.tp); if(tp) tpLookup[tp]=r; });
+      var tpSet=new Set(Object.keys(tpLookup).map(U));
+      var f=fObj(), areaVals=arr(f.area).map(U), areaGrpVals=arr(f.areaGrp).map(U);
+      var source=[]; try{ source=Array.isArray(TEST_PACK_ROWS)?TEST_PACK_ROWS:[]; }catch(e){}
+      var out=[];
+      for(var i=0;i<source.length;i++){
+        var r=source[i], info=punchInfo(r);
+        if(!info.tpU) continue;
+        if(tpSet.size && !tpSet.has(info.tpU)) continue;
+        if(!areaPassInfo(info,areaVals,areaGrpVals)) continue;
+        out.push(r);
+      }
+      if(!out.length && source.length && C(f.con||'ALL')==='ALL' && isAll(f.sys) && isAll(f.stage)){
+        for(var j=0;j<source.length;j++){
+          var rr=source[j], ii=punchInfo(rr);
+          if(ii.tpU && areaPassInfo(ii,areaVals,areaGrpVals)) out.push(rr);
+        }
+      }
+      var backMap={}; for(var k=0;k<out.length;k++){ var pi=punchInfo(out[k]); if(pi.tp && pi.backCleared) backMap[pi.tp]=true; }
+      var res={rows:out,tpLookup:tpLookup,backMap:backMap}; pCache.set(key,res); limitCache(pCache,30); return res;
+    };
+    try{ punchRawRowsForFiltered=window.punchRawRowsForFiltered; }catch(e){}
+  }
+
+  var oldFilteredMat = (typeof filteredMaterialRows==='function') ? filteredMaterialRows : window.filteredMaterialRows;
+  if(oldFilteredMat){
+    window.filteredMaterialRows = function(data,ignoreArea){
+      var key=filterKey('matRows')+'§'+(ignoreArea?'1':'0'); if(mRowsCache.has(key)) return mRowsCache.get(key);
+      var tpSet=new Set((data||TP||[]).map(function(r){return U(r&&r.tp);}).filter(Boolean));
+      var rows=[];
+      try{ rows=(Array.isArray(MAT_ROWS)?MAT_ROWS:[]).concat(typeof tempSupportExceptionRows==='function'?tempSupportExceptionRows(data):[]); }catch(e){ rows=Array.isArray(MAT_ROWS)?MAT_ROWS:[]; }
+      var f=fObj(), areaVals=arr(f.area).map(U), areaGrpVals=arr(f.areaGrp).map(U);
+      var out=[];
+      for(var i=0;i<rows.length;i++){
+        var r=rows[i], info=matInfo(r);
+        if(!info.tp || !tpSet.has(info.tp)) continue;
+        if(!ignoreArea && !areaPassInfo(info,areaVals,areaGrpVals)) continue;
+        out.push(r);
+      }
+      mRowsCache.set(key,out); limitCache(mRowsCache,40); return out;
+    };
+    try{ filteredMaterialRows=window.filteredMaterialRows; }catch(e){}
+  }
+
+  var oldMaterialTotals = (typeof materialTotals==='function') ? materialTotals : window.materialTotals;
+  if(oldMaterialTotals){
+    window.materialTotals = function(data){
+      var key=filterKey('matTotals'); if(mTotalsCache.has(key)) return mTotalsCache.get(key);
+      var rows=window.filteredMaterialRows ? window.filteredMaterialRows(data) : oldFilteredMat(data);
+      var t={sp:0,su:0,va:0};
+      for(var i=0;i<rows.length;i++){ var info=matInfo(rows[i]); t.sp+=info.sp; t.su+=info.su; t.va+=info.va; }
+      mTotalsCache.set(key,t); limitCache(mTotalsCache,40); return t;
+    };
+    try{ materialTotals=window.materialTotals; }catch(e){}
+  }
+
+  // Make repeated Overview filters instant once calculated, without changing the original visual output.
+  var oldOverview = (typeof renderOverview==='function') ? renderOverview : window.renderOverview;
+  var overviewDomCache=new Map();
+  if(oldOverview){
+    window.renderOverview = function(data){
+      var key=filterKey('overviewDom');
+      var cached=overviewDomCache.get(key);
+      if(cached){
+        Object.keys(cached).forEach(function(id){ var el=document.getElementById(id); if(el) el.innerHTML=cached[id]; });
+        return;
+      }
+      oldOverview(data);
+      var ids=['kpiRow','overallLenVal','overallVolVal','punchCards','overviewMatKpi','areaChart','priChart'];
+      var snap={}; ids.forEach(function(id){ var el=document.getElementById(id); if(el) snap[id]=el.innerHTML; });
+      overviewDomCache.set(key,snap); limitCache(overviewDomCache,30);
+    };
+    try{ renderOverview=window.renderOverview; }catch(e){}
+  }
+
+  // Improve perceived filter speed on heavy tabs: show quick placeholders, then run the heavy part after the browser paints.
+  function idle(fn,delay){
+    if(window.requestIdleCallback) return requestIdleCallback(fn,{timeout:delay||400});
+    return setTimeout(fn,delay||80);
+  }
+  function note(id,msg){ var el=document.getElementById(id); if(el) el.innerHTML='<div class="stage-note">'+msg+'</div>'; }
+
+  var oldPunchRender = (typeof renderPunchPage==='function') ? renderPunchPage : window.renderPunchPage;
+  var punchToken=0;
+  if(oldPunchRender){
+    window.renderPunchPage = function(data){
+      var token=++punchToken;
+      note('aStageStatusTable','Applying filters...');
+      note('aBalanceTypeChart','Applying filters...');
+      note('punchCommentsBody','Applying filters...');
+      idle(function(){ if(token!==punchToken) return; try{ oldPunchRender(data); }catch(e){ console.error('V74 punch render failed:',e); } },120);
+    };
+    try{ renderPunchPage=window.renderPunchPage; }catch(e){}
+  }
+
+  var oldStageRender = (typeof renderStagesControl==='function') ? renderStagesControl : window.renderStagesControl;
+  var stageToken=0;
+  if(oldStageRender){
+    window.renderStagesControl = function(data){
+      var token=++stageToken;
+      note('reinstPendingTable','Applying filters...');
+      idle(function(){ if(token!==stageToken) return; try{ oldStageRender(data); }catch(e){ console.error('V74 stage control render failed:',e); } },120);
+    };
+    try{ renderStagesControl=window.renderStagesControl; }catch(e){}
+  }
+
+  // Clear V74 caches when data changes after live dashboard_data.js arrives.
+  var lastDV=dataVer();
+  setInterval(function(){ var now=dataVer(); if(now!==lastDV){ lastDV=now; clearV74Caches(); overviewDomCache.clear(); } },1200);
 })();
 </script>
 
