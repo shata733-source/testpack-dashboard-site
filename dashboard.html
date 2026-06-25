@@ -3493,6 +3493,42 @@ function filteredPunchEvents(rows){
   });
 }
 
+
+// OVERVIEW REINSTATEMENT-SCOPE HELPERS (display-only KPIs)
+// These helpers do not change any calculation source. They only reuse the existing
+// 429 Reinstatement TP list from the V21 script so selected overview cards follow
+// the same contractor-scope behavior used by B Item / Reinstatement views.
+function overviewReinstatementCccSet(){
+  if(window.__overviewReinstCccSet) return window.__overviewReinstCccSet;
+  let list=[];
+  try{
+    const sc=document.getElementById('final-v21-exact-reinstatement-filter-bitem-control-fix');
+    const txt=sc?String(sc.textContent||''):'';
+    const m=txt.match(/const\s+REINST_CCC\s*=\s*new\s+Set\((\[[\s\S]*?\])\.map/);
+    if(m&&m[1]) list=JSON.parse(m[1]);
+  }catch(e){console.warn('[overview] could not read reinstatement list',e);}
+  window.__overviewReinstCccSet=new Set((list||[]).map(x=>clean(x).toUpperCase()).filter(Boolean));
+  return window.__overviewReinstCccSet;
+}
+function overviewReinstatementFilteredData(){
+  const reinstSet=overviewReinstatementCccSet();
+  const bakCon=F&&F.con;
+  let out=[];
+  try{
+    if(F) F.con='ALL';
+    if(typeof FILTER_CACHE!=='undefined') FILTER_CACHE={key:'',data:null};
+    out=(typeof getFiltered==='function'?getFiltered():((Array.isArray(TP)?TP:[]))).slice();
+  }catch(e){
+    out=(Array.isArray(TP)?TP:[]).slice();
+  }finally{
+    try{ if(F) F.con=bakCon; if(typeof FILTER_CACHE!=='undefined') FILTER_CACHE={key:'',data:null}; }catch(e){}
+  }
+  const con=clean(bakCon);
+  if(con==='CCC') out=out.filter(r=>reinstSet.has(clean(r&&r.tp).toUpperCase()));
+  else if(con==='JGC Direct MP') out=out.filter(r=>!reinstSet.has(clean(r&&r.tp).toUpperCase()));
+  return out;
+}
+
 // OVERVIEW
 function renderOverview(data){
   const total=data.length;
@@ -3508,14 +3544,28 @@ function renderOverview(data){
   const hydro  =cnt(data,r=>hasStage(r,'Hydro Testing'));
   const rmcCCC =cnt(data,r=>r.rmc_ccc);
   const rmcJGC =cnt(data,r=>r.rmc_jgc);
+  const releasePCOM = cnt(data,r=>hasStage(r,'Release to PCOM (For Cleaning)'));
+  const reinstData = overviewReinstatementFilteredData();
+  const reinstTotal = reinstData.length;
+  const rp=v=>pct(v,reinstTotal);
+  const retReinst = cnt(reinstData,r=>hasStage(r,'Return for Reinstatement'));
+  const lcQC2 = cnt(reinstData,r=>hasStage(r,'L/C Issue To QC-2'));
+  const qcPunchListReturn = cnt(reinstData,r=>hasStage(r,'QC Punch List Return'));
+  const qcReinstSign = cnt(reinstData,r=>hasStage(r,'QC Reinstatement Sign'));
 
   const prevData=previousFilteredData();
+  const prevReinstData=DIFF_BASE?withDashboardSnapshot(DIFF_BASE,()=>overviewReinstatementFilteredData()):null;
   const prev=prevData?withDashboardSnapshot(DIFF_BASE,()=>({
     total:prevData.length,
     cnsLC:cnt(prevData,r=>hasCnsLC(r)), cnsPI:cnt(prevData,r=>hasStage(r,'CNS Punch Issue')), cnsAPC:cnt(prevData,r=>hasStage(r,'CNS A Punch Clear')),
     lcQC:cnt(prevData,r=>hasStage(r,'L/C Issue To QC')), qcPre:cnt(prevData,r=>hasStage(r,'QC PreTestPack Punch List')), qcAClr:cnt(prevData,r=>hasStage(r,'QC Punch A Cleared')),
     qcACnf:cnt(prevData,r=>hasStage(r,'QC Punch A Confirmed')), rft:cnt(prevData,r=>hasStage(r,'RFT')), hydro:cnt(prevData,r=>hasStage(r,'Hydro Testing')),
-    rmcCCC:cnt(prevData,r=>r.rmc_ccc), rmcJGC:cnt(prevData,r=>r.rmc_jgc), overallLen:sum(prevData,r=>r.len), overallVol:sum(prevData,r=>r.vol), punch:punchTotalsForDisplay(prevData), mat:materialTotals(prevData)
+    rmcCCC:cnt(prevData,r=>r.rmc_ccc), rmcJGC:cnt(prevData,r=>r.rmc_jgc), releasePCOM:cnt(prevData,r=>hasStage(r,'Release to PCOM (For Cleaning)')),
+    retReinst:prevReinstData?cnt(prevReinstData,r=>hasStage(r,'Return for Reinstatement')):null,
+    lcQC2:prevReinstData?cnt(prevReinstData,r=>hasStage(r,'L/C Issue To QC-2')):null,
+    qcPunchListReturn:prevReinstData?cnt(prevReinstData,r=>hasStage(r,'QC Punch List Return')):null,
+    qcReinstSign:prevReinstData?cnt(prevReinstData,r=>hasStage(r,'QC Reinstatement Sign')):null,
+    overallLen:sum(prevData,r=>r.len), overallVol:sum(prevData,r=>r.vol), punch:punchTotalsForDisplay(prevData), mat:materialTotals(prevData)
   })):null;
 
   h('kpiRow',
@@ -3523,14 +3573,19 @@ function renderOverview(data){
     kpi('CNS L/C Completed',cnsLC,p(cnsLC),'',deltaHtml(cnsLC,prev&&prev.cnsLC)) +
     kpi('CNS Punch Issue',cnsPI,p(cnsPI),'orange',deltaHtml(cnsPI,prev&&prev.cnsPI)) +
     kpi('CNS A Punch Clear',cnsAPC,p(cnsAPC),'purple',deltaHtml(cnsAPC,prev&&prev.cnsAPC)) +
+    kpi('RMC by CCC',rmcCCC,p(rmcCCC),'purple',deltaHtml(rmcCCC,prev&&prev.rmcCCC)) +
+    kpi('RMC by JGC',rmcJGC,p(rmcJGC),'',deltaHtml(rmcJGC,prev&&prev.rmcJGC)) +
     kpi('L/C Issue To QC',lcQC,p(lcQC),'green',deltaHtml(lcQC,prev&&prev.lcQC)) +
     kpi('QC PreTestPack',qcPre,p(qcPre),'amber',deltaHtml(qcPre,prev&&prev.qcPre)) +
     kpi('QC Punch A Cleared',qcAClr,p(qcAClr),'green',deltaHtml(qcAClr,prev&&prev.qcAClr)) +
     kpi('QC Punch A Confirmed',qcACnf,p(qcACnf),'',deltaHtml(qcACnf,prev&&prev.qcACnf)) +
     kpi('RFT',rft,p(rft),'green',deltaHtml(rft,prev&&prev.rft)) +
     kpi('Hydro Testing',hydro,p(hydro),'pink',deltaHtml(hydro,prev&&prev.hydro)) +
-    kpi('RMC by CCC',rmcCCC,p(rmcCCC),'purple',deltaHtml(rmcCCC,prev&&prev.rmcCCC)) +
-    kpi('RMC by JGC',rmcJGC,p(rmcJGC),'',deltaHtml(rmcJGC,prev&&prev.rmcJGC))
+    kpi('Release to PCOM',releasePCOM,p(releasePCOM),'pink',deltaHtml(releasePCOM,prev&&prev.releasePCOM)) +
+    kpi('Return for Reinstatement',retReinst,rp(retReinst),'orange',deltaHtml(retReinst,prev&&prev.retReinst)) +
+    kpi('L/C Issue To QC-2',lcQC2,rp(lcQC2),'green',deltaHtml(lcQC2,prev&&prev.lcQC2)) +
+    kpi('QC Punch List Return',qcPunchListReturn,rp(qcPunchListReturn),'amber',deltaHtml(qcPunchListReturn,prev&&prev.qcPunchListReturn)) +
+    kpi('QC Reinstatement Sign',qcReinstSign,rp(qcReinstSign),'purple',deltaHtml(qcReinstSign,prev&&prev.qcReinstSign))
   );
 
   const overallLen=sum(data,r=>r.len);
