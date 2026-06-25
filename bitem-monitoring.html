@@ -6,8 +6,8 @@
 <title>B Item Monitor — CCC Control Platform</title>
 <link rel="stylesheet" href="/assets/portal.css">
 <style>
-:root{--bg:#06101c;--panel:#0d1b2d;--panel2:#12243b;--panel3:#162b46;--line:#203a5b;--line2:#2d4a70;--text:#f4f7fb;--muted:#9fb3ca;--cyan:#00d4ff;--green:#16c784;--orange:#f59e0b;--red:#ef4444;--purple:#7c3aed;--blue:#38bdf8;--shadow:0 20px 60px rgba(0,0,0,.35)}
-*{box-sizing:border-box}body{margin:0;background:linear-gradient(135deg,#06101c,#09182b 55%,#0a1021);color:var(--text);font-family:Inter,Arial,sans-serif;min-height:100vh}.monitor-shell{min-height:calc(100vh - 48px);padding:22px}.monitor-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.title-block h1{font-size:26px;line-height:1.15;margin:0;font-weight:900;letter-spacing:-.4px}.title-block p{margin:6px 0 0;color:var(--muted);font-size:13px}.head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.btn{border:1px solid var(--line2);background:rgba(255,255,255,.04);color:var(--text);border-radius:10px;padding:10px 12px;font-weight:900;font-size:12px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px}.btn:hover{border-color:var(--cyan);color:var(--cyan)}.btn.primary{background:rgba(0,212,255,.12);border-color:rgba(0,212,255,.45);color:var(--cyan)}.status{font-size:12px;color:var(--muted);font-weight:800}.status b{color:var(--cyan)}.status.err b{color:var(--red)}.grid-kpi{display:grid;grid-template-columns:repeat(6,minmax(140px,1fr));gap:12px;margin-bottom:14px}.kpi{background:linear-gradient(145deg,rgba(13,27,45,.95),rgba(10,20,35,.95));border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow);position:relative;overflow:hidden}.kpi:after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--cyan)}.kpi.green:after{background:var(--green)}.kpi.orange:after{background:var(--orange)}.kpi.red:after{background:var(--red)}.kpi.purple:after{background:var(--purple)}.kpi .label{font-size:11px;color:var(--muted);font-weight:900;text-transform:uppercase;letter-spacing:.7px}.kpi .value{font-size:30px;margin-top:8px;font-weight:950;font-family:ui-monospace,Consolas,monospace;line-height:1}.kpi .sub{font-size:11px;color:var(--muted);margin-top:6px}.monitor-layout{display:grid;grid-template-columns:320px 1fr;gap:14px;align-items:start}.panel{background:rgba(13,27,45,.92);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}.panel-head{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}.panel-title{font-weight:950;font-size:14px;letter-spacing:.2px}.panel-body{padding:14px}.filter-row{display:grid;gap:10px}.input,.select{width:100%;height:40px;border:1px solid var(--line2);border-radius:10px;background:#081526;color:var(--text);padding:0 12px;font-weight:800;outline:none}.input:focus,.select:focus{border-color:var(--cyan)}.user-list{display:flex;flex-direction:column;gap:8px;max-height:520px;overflow:auto;padding-right:3px}.user-card{border:1px solid var(--line);background:rgba(255,255,255,.035);border-radius:13px;padding:11px;cursor:pointer;transition:.15s}.user-card:hover,.user-card.active{border-color:var(--cyan);background:rgba(0,212,255,.08)}.user-name{font-weight:950;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.user-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:9px}.mini{background:#081526;border:1px solid rgba(255,255,255,.06);border-radius:9px;padding:7px;text-align:center}.mini b{display:block;font-family:ui-monospace,Consolas,monospace;font-size:16px}.mini span{display:block;font-size:9px;color:var(--muted);font-weight:900;text-transform:uppercase}.content-stack{display:grid;gap:14px}.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}.chart-bars{display:flex;align-items:end;gap:8px;height:150px;padding:8px 2px 0;border-top:1px solid rgba(255,255,255,.06);margin-top:10px}.bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}.bar{width:100%;max-width:34px;min-height:4px;border-radius:6px 6px 2px 2px;background:linear-gradient(180deg,var(--cyan),var(--purple));box-shadow:0 0 18px rgba(0,212,255,.16)}.bar-label{font-size:9px;color:var(--muted);font-weight:900;white-space:nowrap;transform:rotate(-35deg);transform-origin:center}.bar-val{font-size:10px;font-family:ui-monospace,Consolas,monospace;color:var(--text);font-weight:900}.table-wrap{overflow:auto;max-height:560px}.table{width:100%;border-collapse:separate;border-spacing:0;min-width:1050px}.table th{position:sticky;top:0;background:#0b192b;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding:12px;border-bottom:1px solid var(--line);z-index:2}.table td{padding:12px;border-bottom:1px solid rgba(255,255,255,.07);font-size:12px;vertical-align:top;color:#dbe7f5}.table tr:hover td{background:rgba(0,212,255,.04)}.comment{max-width:480px;line-height:1.35}.mono{font-family:ui-monospace,Consolas,monospace}.badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 9px;font-weight:950;font-size:11px;border:1px solid rgba(255,255,255,.12)}.badge.closed{color:#bbf7d0;background:rgba(22,199,132,.12);border-color:rgba(22,199,132,.35)}.badge.opened{color:#fed7aa;background:rgba(249,115,22,.12);border-color:rgba(249,115,22,.35)}.badge.edited{color:#bae6fd;background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.35)}.empty{padding:34px;text-align:center;color:var(--muted);font-weight:800}.note{background:rgba(0,212,255,.08);border:1px solid rgba(0,212,255,.2);border-radius:13px;color:#c8f4ff;padding:12px 14px;font-size:12px;line-height:1.45;margin-bottom:14px}.pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.pill{border:1px solid var(--line);background:#081526;border-radius:999px;padding:7px 10px;color:var(--muted);font-weight:900;font-size:11px}.pill b{color:var(--text)}.loading{opacity:.65;pointer-events:none}.hide{display:none!important}@media(max-width:1100px){.grid-kpi{grid-template-columns:repeat(3,1fr)}.monitor-layout,.split{grid-template-columns:1fr}}@media(max-width:720px){.grid-kpi{grid-template-columns:repeat(2,1fr)}.monitor-head{align-items:flex-start;flex-direction:column}.monitor-shell{padding:14px}.table{min-width:900px}}
+:root{--bg:#05111f;--bg2:#071a2d;--panel:#0d2036;--panel2:#132c49;--soft:#183858;--line:#2b557c;--text:#f7fbff;--muted:#b9cbe0;--cyan:#16d9ff;--green:#22c55e;--orange:#fb923c;--amber:#facc15;--red:#f43f5e;--purple:#a855f7;--blue:#60a5fa;--shadow:0 18px 50px rgba(0,0,0,.32)}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0%,#0b3551 0,#07192c 36%,#050b17 100%);color:var(--text);font-family:Inter,Arial,sans-serif;min-height:100vh}.monitor-shell{min-height:calc(100vh - 48px);padding:22px}.monitor-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}.title-block h1{font-size:28px;line-height:1.05;margin:0;font-weight:950;letter-spacing:-.5px;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.35)}.title-block p{margin:7px 0 0;color:var(--muted);font-size:13px;font-weight:750}.head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.btn{border:1px solid var(--line);background:linear-gradient(180deg,#102844,#0b1d32);color:var(--text);border-radius:11px;padding:10px 13px;font-weight:950;font-size:12px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;box-shadow:0 8px 22px rgba(0,0,0,.18)}.btn:hover{border-color:var(--cyan);color:var(--cyan)}.btn.primary{background:linear-gradient(135deg,rgba(22,217,255,.20),rgba(168,85,247,.13));border-color:rgba(22,217,255,.55);color:#dffaff}.status{font-size:12px;color:var(--muted);font-weight:900}.status b{color:var(--cyan)}.status.err b{color:var(--red)}.note{background:linear-gradient(90deg,rgba(22,217,255,.12),rgba(34,197,94,.08));border:1px solid rgba(22,217,255,.30);border-radius:14px;color:#dcf8ff;padding:12px 14px;font-size:12px;line-height:1.45;margin-bottom:14px;font-weight:800}.grid-kpi{display:grid;grid-template-columns:repeat(6,minmax(140px,1fr));gap:12px;margin-bottom:14px}.kpi{background:linear-gradient(145deg,rgba(15,38,63,.98),rgba(8,24,42,.98));border:1px solid var(--line);border-radius:17px;padding:15px;box-shadow:var(--shadow);position:relative;overflow:hidden}.kpi:after{content:'';position:absolute;left:0;right:0;bottom:0;height:4px;background:var(--cyan)}.kpi.green:after{background:var(--green)}.kpi.orange:after{background:var(--orange)}.kpi.amber:after{background:var(--amber)}.kpi.red:after{background:var(--red)}.kpi.purple:after{background:var(--purple)}.kpi .label{font-size:10.5px;color:#c8ddf5;font-weight:950;text-transform:uppercase;letter-spacing:.7px}.kpi .value{font-size:30px;margin-top:8px;font-weight:950;font-family:ui-monospace,Consolas,monospace;line-height:1;color:#fff}.kpi .sub{font-size:11px;color:var(--muted);margin-top:7px;font-weight:750}.monitor-layout{display:grid;grid-template-columns:320px 1fr;gap:14px;align-items:start}.panel{background:linear-gradient(180deg,rgba(14,34,56,.96),rgba(10,25,43,.96));border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow);overflow:hidden}.panel-head{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px;background:rgba(255,255,255,.025)}.panel-title{font-weight:950;font-size:14px;letter-spacing:.2px;color:#fff}.panel-body{padding:14px}.filter-row{display:grid;gap:10px}.input,.select{width:100%;height:42px;border:1px solid var(--line);border-radius:11px;background:#07182a;color:#f7fbff;padding:0 12px;font-weight:900;outline:none}.input::placeholder{color:#9db2c9}.input:focus,.select:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(22,217,255,.12)}.select option{background:#07182a;color:#fff}.user-list{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;padding-right:3px}.user-card{border:1px solid var(--line);background:rgba(255,255,255,.045);border-radius:13px;padding:10px}.user-name{font-weight:950;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff}.user-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:9px}.mini{background:#07182a;border:1px solid rgba(255,255,255,.08);border-radius:9px;padding:7px;text-align:center}.mini b{display:block;font-family:ui-monospace,Consolas,monospace;font-size:15px;color:#fff}.mini span{display:block;font-size:9px;color:var(--muted);font-weight:950;text-transform:uppercase}.content-stack{display:grid;gap:14px}.split{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.chart-tools{display:flex;align-items:center;gap:8px}.chart-bars{display:flex;align-items:end;gap:10px;height:180px;padding:14px 4px 0;border-top:1px solid rgba(255,255,255,.08);margin-top:8px;overflow-x:auto}.bar-wrap{min-width:42px;display:flex;flex-direction:column;align-items:center;gap:6px}.bar-pair{height:130px;display:flex;align-items:end;gap:4px}.bar{width:16px;min-height:3px;border-radius:7px 7px 2px 2px;box-shadow:0 0 16px rgba(0,0,0,.24)}.bar.closed{background:linear-gradient(180deg,#42f58d,#16a34a)}.bar.opened{background:linear-gradient(180deg,#ffb86b,#f97316)}.bar-label{font-size:9px;color:#d6e8fb;font-weight:950;white-space:nowrap;transform:rotate(-32deg);transform-origin:center}.bar-val{font-size:10px;font-family:ui-monospace,Consolas,monospace;color:#fff;font-weight:950;min-height:12px}.legend{display:flex;gap:10px;align-items:center;font-size:11px;color:var(--muted);font-weight:900}.leg{display:inline-flex;align-items:center;gap:5px}.leg:before{content:'';width:10px;height:10px;border-radius:3px;background:var(--green)}.leg.open:before{background:var(--orange)}.table-wrap{overflow:auto;max-height:560px}.table{width:100%;border-collapse:separate;border-spacing:0;min-width:1100px}.table th{position:sticky;top:0;background:#0a1c31;color:#d5e9ff;font-size:11px;text-transform:uppercase;letter-spacing:.6px;text-align:left;padding:12px;border-bottom:1px solid var(--line);z-index:2}.table td{padding:12px;border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;vertical-align:top;color:#eef7ff}.table tr:hover td{background:rgba(22,217,255,.06)}.comment{max-width:520px;line-height:1.35}.mono{font-family:ui-monospace,Consolas,monospace}.badge{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 9px;font-weight:950;font-size:11px;border:1px solid rgba(255,255,255,.15);white-space:nowrap}.badge.closed{color:#d9ffe7;background:rgba(34,197,94,.18);border-color:rgba(34,197,94,.52)}.badge.opened{color:#fff0d9;background:rgba(249,115,22,.18);border-color:rgba(249,115,22,.52)}.badge.edited{color:#dff5ff;background:rgba(96,165,250,.18);border-color:rgba(96,165,250,.45)}.empty{padding:34px;text-align:center;color:var(--muted);font-weight:900}.pill-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.pill{border:1px solid var(--line);background:#07182a;border-radius:999px;padding:7px 10px;color:#d6e8fb;font-weight:950;font-size:11px}.pill b{color:#fff}.loading{opacity:.72;pointer-events:none}.hide{display:none!important}@media(max-width:1200px){.grid-kpi{grid-template-columns:repeat(3,1fr)}.monitor-layout,.split{grid-template-columns:1fr}}@media(max-width:720px){.grid-kpi{grid-template-columns:repeat(2,1fr)}.monitor-head{align-items:flex-start;flex-direction:column}.monitor-shell{padding:14px}.table{min-width:950px}}
 </style>
 </head>
 <body class="top-shell">
@@ -25,26 +25,27 @@
     </div>
   </div>
 
-  <div class="note">This page reads only B Item user edits / monitoring data from the B Item APIs. It does not render Overview, Punch, Stages Control, charts, or dashboard tabs.</div>
+  <div class="note">This page reads only B Item user edits / monitoring data. Touched Comments = unique B comments touched by users. Closed / Opened Actions = actions history, so both can be higher than the unique touched count if the same comment was closed then reopened.</div>
 
   <section class="grid-kpi" id="kpiGrid"></section>
 
   <section class="monitor-layout">
     <aside class="panel">
-      <div class="panel-head"><div class="panel-title">👤 Users Filter</div><button class="btn" id="clearUserBtn">All</button></div>
+      <div class="panel-head"><div class="panel-title">👤 Filters</div><button class="btn" id="clearUserBtn">All</button></div>
       <div class="panel-body">
         <div class="filter-row">
-          <input class="input" id="searchBox" placeholder="Search user / TP / comment...">
+          <select class="select" id="userSel"><option value="">All users</option></select>
+          <input class="input" id="searchBox" placeholder="Search TP / B item / comment...">
           <select class="select" id="periodSel">
             <option value="all">All time</option>
             <option value="today">Today</option>
-            <option value="week">Last 7 days</option>
+            <option value="week">Current week (Fri → Thu)</option>
             <option value="month">This month</option>
           </select>
           <select class="select" id="actionSel">
             <option value="all">Closed + Opened</option>
-            <option value="closed">Closed only</option>
-            <option value="opened">Opened only</option>
+            <option value="closed">Closed actions only</option>
+            <option value="opened">Opened actions only</option>
           </select>
         </div>
         <div class="pill-row" id="selectedUserPill"></div>
@@ -56,8 +57,14 @@
     <section class="content-stack">
       <div class="split">
         <div class="panel">
-          <div class="panel-head"><div class="panel-title">📅 Closed / Opened by Day</div><span class="status" id="eventSource"></span></div>
-          <div class="panel-body"><div class="chart-bars" id="dailyChart"></div></div>
+          <div class="panel-head">
+            <div class="panel-title">📊 Closed / Opened Trend</div>
+            <div class="chart-tools">
+              <div class="legend"><span class="leg">Closed</span><span class="leg open">Opened</span></div>
+              <select class="select" id="chartModeSel" style="width:132px;height:34px"><option value="day">Per day</option><option value="week">Per week</option><option value="month">Per month</option></select>
+            </div>
+          </div>
+          <div class="panel-body"><div class="chart-bars" id="trendChart"></div><div class="status" id="eventSource"></div></div>
         </div>
         <div class="panel">
           <div class="panel-head"><div class="panel-title">📌 Selected User Summary</div></div>
@@ -67,7 +74,7 @@
 
       <div class="panel">
         <div class="panel-head"><div class="panel-title">📝 Modified B Comments</div><span class="status" id="rowCount"></span></div>
-        <div class="table-wrap"><table class="table"><thead><tr><th>Action</th><th>User</th><th>Date</th><th>B Item</th><th>TP No.</th><th>Area</th><th>Stage</th><th>Comment</th><th>Final Status</th></tr></thead><tbody id="rowsBody"></tbody></table></div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>Action</th><th>User</th><th>Date</th><th>B Item</th><th>TP No.</th><th>Area</th><th>Stage</th><th>Comment</th><th>Current Final Status</th></tr></thead><tbody id="rowsBody"></tbody></table></div>
       </div>
     </section>
   </section>
@@ -75,107 +82,104 @@
 <script src="/assets/portal.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { user:null, raw:null, events:[], comments:[], base:[], filtered:[] };
+const state = { user:'', raw:null, events:[], comments:[], base:[], filtered:[] };
 function esc(v){return String(v??'').replace(/[&<>'"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));}
+function clean(v){return String(v??'').replace(/\s+/g,' ').trim();}
 function nfmt(n){return Number(n||0).toLocaleString('en-US');}
 function dval(v){const d=v?new Date(v):null;return d&&!isNaN(d)?d:null;}
 function dshort(v){const d=dval(v);return d?d.toLocaleString('en-GB',{year:'2-digit',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';}
 function actionClass(a){a=String(a||'edited').toLowerCase();return a==='closed'?'closed':a==='opened'?'opened':'edited';}
 function actionText(a){a=actionClass(a);return a==='closed'?'✅ Closed':a==='opened'?'↩ Opened':'✎ Edited';}
+function commentKey(r){return clean(r.fingerprint)||clean(r.bitem_id)||[r.tp_no,r.area,r.construction_stage,r.comment_text].map(clean).join('|');}
+function currentIsClosed(r){return clean(r.final_status).toUpperCase()==='CLEARED';}
+function startOfDay(d){const x=new Date(d);x.setHours(0,0,0,0);return x;}
+function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
+function isoDay(d){return startOfDay(d).toISOString().slice(0,10);}
+function fridayWeekStart(d){const x=startOfDay(d);const diff=(x.getDay()-5+7)%7;return addDays(x,-diff);}
+function monthStart(d){return new Date(d.getFullYear(),d.getMonth(),1);}
 function isInPeriod(row, period){
   if(period==='all')return true;
   const d=dval(row.edited_at); if(!d)return false;
-  const now=new Date(); const day=d.toISOString().slice(0,10); const today=now.toISOString().slice(0,10);
-  if(period==='today')return day===today;
-  if(period==='week')return (now-d)>=0 && (now-d)<=7*24*60*60*1000;
-  if(period==='month')return day.slice(0,7)===today.slice(0,7);
+  const now=new Date();
+  if(period==='today')return isoDay(d)===isoDay(now);
+  if(period==='week'){const s=fridayWeekStart(now), e=addDays(s,7); return d>=s && d<e;}
+  if(period==='month'){const s=monthStart(now), e=new Date(now.getFullYear(),now.getMonth()+1,1); return d>=s && d<e;}
   return true;
 }
-function makeKpis(rows, comments){
+function uniqueStats(rows){
+  const m=new Map();
+  rows.forEach(r=>{const k=commentKey(r); if(!k)return; const cur=m.get(k)||{events:[], latest:null}; cur.events.push(r); if(!cur.latest || String(r.edited_at||'')>String(cur.latest.edited_at||'')) cur.latest=r; m.set(k,cur);});
+  let stillClosed=0, stillOpen=0;
+  for(const v of m.values()){ if(currentIsClosed(v.latest)) stillClosed++; else stillOpen++; }
+  return { touched:m.size, stillClosed, stillOpen };
+}
+function makeKpis(rows){
   const closed=rows.filter(r=>actionClass(r.action)==='closed').length;
   const opened=rows.filter(r=>actionClass(r.action)==='opened').length;
   const today=rows.filter(r=>isInPeriod(r,'today')).length;
   const week=rows.filter(r=>isInPeriod(r,'week')).length;
   const month=rows.filter(r=>isInPeriod(r,'month')).length;
-  const users=new Set(rows.map(r=>r.user||r.display_name).filter(Boolean)).size;
+  const u=uniqueStats(rows);
   $('kpiGrid').innerHTML=`
-    <div class="kpi"><div class="label">Modified Comments</div><div class="value">${nfmt(comments.length||rows.length)}</div><div class="sub">Current B comments touched by users</div></div>
+    <div class="kpi"><div class="label">Touched Comments</div><div class="value">${nfmt(u.touched)}</div><div class="sub">Unique B comments touched by users</div></div>
     <div class="kpi green"><div class="label">Closed Actions</div><div class="value">${nfmt(closed)}</div><div class="sub">User entered Punch Cleared date</div></div>
     <div class="kpi orange"><div class="label">Opened Actions</div><div class="value">${nfmt(opened)}</div><div class="sub">User removed / cleared date</div></div>
-    <div class="kpi purple"><div class="label">Today</div><div class="value">${nfmt(today)}</div><div class="sub">Actions today</div></div>
-    <div class="kpi"><div class="label">This Week</div><div class="value">${nfmt(week)}</div><div class="sub">Last 7 days</div></div>
-    <div class="kpi red"><div class="label">This Month</div><div class="value">${nfmt(month)}</div><div class="sub">Current month · ${users} users</div></div>`;
+    <div class="kpi amber"><div class="label">Closed & Still Closed</div><div class="value">${nfmt(u.stillClosed)}</div><div class="sub">Unique touched comments currently closed</div></div>
+    <div class="kpi red"><div class="label">Opened & Still Open</div><div class="value">${nfmt(u.stillOpen)}</div><div class="sub">Unique touched comments currently open</div></div>
+    <div class="kpi purple"><div class="label">This Week</div><div class="value">${nfmt(week)}</div><div class="sub">Current Fri → Thu week · Today ${nfmt(today)} · Month ${nfmt(month)}</div></div>`;
 }
 function userStats(rows){
   const m=new Map();
-  rows.forEach(r=>{
-    const key=r.user||r.display_name||'Unknown User';
-    if(!m.has(key))m.set(key,{user:key,display_name:r.display_name||key,total:0,closed:0,opened:0,today:0,week:0,month:0});
-    const u=m.get(key); u.total++;
-    if(actionClass(r.action)==='closed')u.closed++; if(actionClass(r.action)==='opened')u.opened++;
-    if(isInPeriod(r,'today'))u.today++; if(isInPeriod(r,'week'))u.week++; if(isInPeriod(r,'month'))u.month++;
-  });
+  rows.forEach(r=>{const key=r.user||r.display_name||'Unknown User'; if(!m.has(key))m.set(key,{user:key,display_name:r.display_name||key,total:0,closed:0,opened:0}); const u=m.get(key); u.total++; if(actionClass(r.action)==='closed')u.closed++; if(actionClass(r.action)==='opened')u.opened++;});
   return [...m.values()].sort((a,b)=>b.total-a.total||a.display_name.localeCompare(b.display_name));
 }
-function renderUsers(rows){
-  const users=userStats(rows);
-  $('userList').innerHTML=users.length?users.map(u=>`<div class="user-card ${state.user===u.user?'active':''}" data-user="${esc(u.user)}"><div class="user-name">${esc(u.display_name||u.user)}</div><div class="user-stats"><div class="mini"><b>${nfmt(u.closed)}</b><span>Closed</span></div><div class="mini"><b>${nfmt(u.opened)}</b><span>Opened</span></div><div class="mini"><b>${nfmt(u.total)}</b><span>Total</span></div></div></div>`).join(''):'<div class="empty">No user edits found.</div>';
-  document.querySelectorAll('.user-card').forEach(el=>el.onclick=()=>{state.user=el.getAttribute('data-user'); applyFilters();});
+function renderUsersDropdown(rows){
+  const users=userStats(rows); const cur=state.user; $('userSel').innerHTML='<option value="">All users</option>'+users.map(u=>`<option value="${esc(u.user)}">${esc(u.display_name||u.user)} — ${nfmt(u.total)}</option>`).join(''); $('userSel').value=cur||'';
+  $('userList').innerHTML=users.length?users.slice(0,10).map(u=>`<div class="user-card"><div class="user-name">${esc(u.display_name||u.user)}</div><div class="user-stats"><div class="mini"><b>${nfmt(u.closed)}</b><span>Closed</span></div><div class="mini"><b>${nfmt(u.opened)}</b><span>Opened</span></div><div class="mini"><b>${nfmt(u.total)}</b><span>Total</span></div></div></div>`).join(''):'<div class="empty">No user edits found.</div>';
 }
 function renderSelectedSummary(rows){
-  const all=userStats(rows);
-  const selected=state.user?all.find(x=>x.user===state.user):null;
-  const target=selected||{display_name:'All Users',total:rows.length,closed:rows.filter(r=>actionClass(r.action)==='closed').length,opened:rows.filter(r=>actionClass(r.action)==='opened').length,today:rows.filter(r=>isInPeriod(r,'today')).length,week:rows.filter(r=>isInPeriod(r,'week')).length,month:rows.filter(r=>isInPeriod(r,'month')).length};
-  $('selectedUserPill').innerHTML=state.user?`<span class="pill">Selected: <b>${esc(target.display_name||state.user)}</b></span>`:`<span class="pill">Selected: <b>All users</b></span>`;
-  $('userSummary').innerHTML=`<div style="font-size:20px;font-weight:950;margin-bottom:8px">${esc(target.display_name||'All Users')}</div><div class="pill-row"><span class="pill">Total <b>${nfmt(target.total)}</b></span><span class="pill">Closed <b>${nfmt(target.closed)}</b></span><span class="pill">Opened <b>${nfmt(target.opened)}</b></span><span class="pill">Today <b>${nfmt(target.today)}</b></span><span class="pill">Week <b>${nfmt(target.week)}</b></span><span class="pill">Month <b>${nfmt(target.month)}</b></span></div>`;
+  const targetName=state.user?((userStats(state.base).find(x=>x.user===state.user)||{}).display_name||state.user):'All Users'; const u=uniqueStats(rows); const closed=rows.filter(r=>actionClass(r.action)==='closed').length; const opened=rows.filter(r=>actionClass(r.action)==='opened').length;
+  $('selectedUserPill').innerHTML=state.user?`<span class="pill">Selected: <b>${esc(targetName)}</b></span>`:`<span class="pill">Selected: <b>All users</b></span>`;
+  $('userSummary').innerHTML=`<div style="font-size:22px;font-weight:950;margin-bottom:10px;color:#fff">${esc(targetName)}</div><div class="pill-row"><span class="pill">Touched <b>${nfmt(u.touched)}</b></span><span class="pill">Closed actions <b>${nfmt(closed)}</b></span><span class="pill">Opened actions <b>${nfmt(opened)}</b></span><span class="pill">Still closed <b>${nfmt(u.stillClosed)}</b></span><span class="pill">Still open <b>${nfmt(u.stillOpen)}</b></span></div>`;
 }
-function renderDaily(rows){
-  const map=new Map(); const now=new Date();
-  for(let i=13;i>=0;i--){const d=new Date(now.getTime()-i*86400000);map.set(d.toISOString().slice(0,10),0)}
-  rows.forEach(r=>{const d=dval(r.edited_at); if(!d)return; const k=d.toISOString().slice(0,10); if(map.has(k))map.set(k,map.get(k)+1);});
-  const vals=[...map.values()]; const max=Math.max(1,...vals);
-  $('dailyChart').innerHTML=[...map.entries()].map(([date,count])=>{const h=Math.max(4,Math.round((count/max)*115));return `<div class="bar-wrap"><div class="bar-val">${count?count:''}</div><div class="bar" style="height:${h}px"></div><div class="bar-label">${date.slice(5)}</div></div>`}).join('');
+function bucketLabel(d,mode){
+  if(mode==='day')return d.toISOString().slice(5,10);
+  if(mode==='week'){const e=addDays(d,6);return d.toISOString().slice(5,10)+'→'+e.toISOString().slice(5,10);}
+  return d.toISOString().slice(0,7);
+}
+function makeBuckets(mode){
+  const now=new Date(); const out=[];
+  if(mode==='day'){for(let i=13;i>=0;i--){const d=addDays(startOfDay(now),-i);out.push({key:isoDay(d),date:d,label:bucketLabel(d,mode),closed:0,opened:0});}}
+  else if(mode==='week'){const cur=fridayWeekStart(now);for(let i=7;i>=0;i--){const d=addDays(cur,-i*7);out.push({key:isoDay(d),date:d,label:bucketLabel(d,mode),closed:0,opened:0});}}
+  else {const cur=monthStart(now);for(let i=11;i>=0;i--){const d=new Date(cur.getFullYear(),cur.getMonth()-i,1);out.push({key:d.toISOString().slice(0,7),date:d,label:bucketLabel(d,mode),closed:0,opened:0});}}
+  return out;
+}
+function bucketKeyForDate(d,mode){if(mode==='day')return isoDay(d); if(mode==='week')return isoDay(fridayWeekStart(d)); return d.toISOString().slice(0,7);}
+function renderTrend(rows){
+  const mode=$('chartModeSel').value; const buckets=makeBuckets(mode); const map=new Map(buckets.map(b=>[b.key,b]));
+  rows.forEach(r=>{const d=dval(r.edited_at); if(!d)return; const b=map.get(bucketKeyForDate(d,mode)); if(!b)return; const a=actionClass(r.action); if(a==='closed')b.closed++; if(a==='opened')b.opened++;});
+  const max=Math.max(1,...buckets.map(b=>Math.max(b.closed,b.opened)));
+  $('trendChart').innerHTML=buckets.map(b=>{const hc=Math.max(b.closed?5:2,Math.round((b.closed/max)*128)); const ho=Math.max(b.opened?5:2,Math.round((b.opened/max)*128)); return `<div class="bar-wrap"><div class="bar-val">${b.closed||b.opened?`${b.closed}/${b.opened}`:''}</div><div class="bar-pair"><div title="Closed ${b.closed}" class="bar closed" style="height:${hc}px"></div><div title="Opened ${b.opened}" class="bar opened" style="height:${ho}px"></div></div><div class="bar-label">${esc(b.label)}</div></div>`;}).join('');
 }
 function renderRows(rows){
-  $('rowCount').textContent=`${nfmt(rows.length)} row(s)`;
-  const top=rows.slice(0,500);
-  $('rowsBody').innerHTML=top.length?top.map(r=>`<tr><td><span class="badge ${actionClass(r.action)}">${actionText(r.action)}</span></td><td><b>${esc(r.display_name||r.user||'')}</b><br><span class="mono" style="color:var(--muted)">${esc(r.user||'')}</span></td><td class="mono">${esc(dshort(r.edited_at))}</td><td class="mono">${esc(r.bitem_id||'')}</td><td class="mono">${esc(r.tp_no||'')}</td><td>${esc(r.area||'')}</td><td>${esc(r.construction_stage||'')}</td><td class="comment">${esc(r.comment_text||r.remarks||'')}</td><td><span class="badge ${String(r.final_status||'').toUpperCase()==='CLEARED'?'closed':'edited'}">${esc(r.final_status||'')}</span><br><span class="mono" style="color:var(--muted)">${esc(r.final_cleared_date||r.user_cleared_date||'')}</span></td></tr>`).join(''):`<tr><td colspan="9"><div class="empty">No modified B comments match the selected filters.</div></td></tr>`;
+  $('rowCount').textContent=`${nfmt(rows.length)} action row(s)`; const top=rows.slice(0,500);
+  $('rowsBody').innerHTML=top.length?top.map(r=>`<tr><td><span class="badge ${actionClass(r.action)}">${actionText(r.action)}</span></td><td><b>${esc(r.display_name||r.user||'')}</b><br><span class="mono" style="color:var(--muted)">${esc(r.user||'')}</span></td><td class="mono">${esc(dshort(r.edited_at))}</td><td class="mono">${esc(r.bitem_id||'')}</td><td class="mono">${esc(r.tp_no||'')}</td><td>${esc(r.area||'')}</td><td>${esc(r.construction_stage||'')}</td><td class="comment">${esc(r.comment_text||r.remarks||'')}</td><td><span class="badge ${currentIsClosed(r)?'closed':'opened'}">${esc(r.final_status||'OPEN')}</span><br><span class="mono" style="color:var(--muted)">${esc(r.final_cleared_date||r.user_cleared_date||'')}</span></td></tr>`).join(''):`<tr><td colspan="9"><div class="empty">No modified B comments match the selected filters.</div></td></tr>`;
 }
 function applyFilters(){
   const q=$('searchBox').value.trim().toLowerCase(); const period=$('periodSel').value; const action=$('actionSel').value;
-  let rows=state.base.slice();
-  if(state.user) rows=rows.filter(r=>(r.user||'')===state.user);
-  if(period!=='all') rows=rows.filter(r=>isInPeriod(r,period));
-  if(action!=='all') rows=rows.filter(r=>actionClass(r.action)===action);
-  if(q) rows=rows.filter(r=>[r.user,r.display_name,r.bitem_id,r.tp_no,r.area,r.construction_stage,r.comment_text,r.final_status].join(' ').toLowerCase().includes(q));
-  state.filtered=rows;
-  makeKpis(rows, state.comments);
-  renderUsers(state.base);
-  renderSelectedSummary(rows);
-  renderDaily(rows);
-  renderRows(rows);
+  let rows=state.base.slice(); if(state.user) rows=rows.filter(r=>(r.user||'')===state.user); if(period!=='all') rows=rows.filter(r=>isInPeriod(r,period)); if(action!=='all') rows=rows.filter(r=>actionClass(r.action)===action); if(q) rows=rows.filter(r=>[r.user,r.display_name,r.bitem_id,r.tp_no,r.area,r.construction_stage,r.comment_text,r.final_status].join(' ').toLowerCase().includes(q));
+  state.filtered=rows; makeKpis(rows); renderUsersDropdown(state.base); renderSelectedSummary(rows); renderTrend(rows); renderRows(rows);
 }
 async function loadMonitor(){
   $('loadStatus').innerHTML='Loading B Item monitor...'; $('loadStatus').className='status'; document.body.classList.add('loading');
-  try{
-    const data=await api('/api/bitem/monitor?limit=2500&event_limit=5000');
-    state.raw=data; state.events=data.events||[]; state.comments=data.comments||[]; state.base=(state.events.length?state.events:state.comments).slice().sort((a,b)=>String(b.edited_at||'').localeCompare(String(a.edited_at||'')));
-    $('eventSource').textContent=(data.meta&&data.meta.event_source)?('Source: '+data.meta.event_source):'';
-    $('loadStatus').innerHTML='Loaded: <b>'+nfmt(state.base.length)+'</b> action(s)';
-    applyFilters();
-  }catch(e){
-    $('loadStatus').className='status err'; $('loadStatus').innerHTML='Error: <b>'+esc(e.data?.error||e.message||'Failed')+'</b>';
-    $('rowsBody').innerHTML='<tr><td colspan="9"><div class="empty">'+esc(e.data?.error||e.message||'Failed to load monitor data')+'</div></td></tr>';
-  }finally{document.body.classList.remove('loading');}
+  try{const data=await api('/api/bitem/monitor?limit=2500&event_limit=5000'); state.raw=data; state.events=data.events||[]; state.comments=data.comments||[]; state.base=(state.events.length?state.events:state.comments).slice().sort((a,b)=>String(b.edited_at||'').localeCompare(String(a.edited_at||''))); $('eventSource').textContent=(data.meta&&data.meta.event_source)?('Source: '+data.meta.event_source):''; $('loadStatus').innerHTML='Loaded: <b>'+nfmt(state.base.length)+'</b> action(s)'; applyFilters();}
+  catch(e){$('loadStatus').className='status err'; $('loadStatus').innerHTML='Error: <b>'+esc(e.data?.error||e.message||'Failed')+'</b>'; $('rowsBody').innerHTML='<tr><td colspan="9"><div class="empty">'+esc(e.data?.error||e.message||'Failed to load monitor data')+'</div></td></tr>';}
+  finally{document.body.classList.remove('loading');}
 }
 async function boot(){
-  await renderNav('monitor');
-  const access=await enforcePageAccess([], {page:'bitem-monitoring', mode:'view'});
-  if(!access.ok)return;
-  await renderNav('monitor');
-  $('reloadBtn').onclick=loadMonitor; $('clearUserBtn').onclick=()=>{state.user=null;applyFilters();};
-  $('searchBox').addEventListener('input',()=>{clearTimeout(window.__mt);window.__mt=setTimeout(applyFilters,120);});
-  $('periodSel').onchange=applyFilters; $('actionSel').onchange=applyFilters;
+  await renderNav('monitor'); const access=await enforcePageAccess([], {page:'bitem-monitoring', mode:'view'}); if(!access.ok)return; await renderNav('monitor');
+  $('reloadBtn').onclick=loadMonitor; $('clearUserBtn').onclick=()=>{state.user='';$('userSel').value='';applyFilters();}; $('userSel').onchange=()=>{state.user=$('userSel').value;applyFilters();};
+  $('searchBox').addEventListener('input',()=>{clearTimeout(window.__mt);window.__mt=setTimeout(applyFilters,120);}); $('periodSel').onchange=applyFilters; $('actionSel').onchange=applyFilters; $('chartModeSel').onchange=()=>renderTrend(state.filtered);
   loadMonitor();
 }
 boot();
