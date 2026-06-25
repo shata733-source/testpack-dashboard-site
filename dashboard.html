@@ -287,6 +287,8 @@ body.light #tpListTable td:first-child{background:var(--surf)}
 #page-material .g3 .card{min-height:390px}
 #page-material .g3 .card .hbar-list{max-height:320px;overflow-y:auto;padding-right:6px}
 #areaChart{max-height:260px;overflow-y:auto;padding-right:6px}
+#areaChart{overscroll-behavior:contain}
+#areaChart .hbar-fill{transition:none!important}
 #valveSizeChart{max-height:235px;overflow-y:auto;padding-right:6px}
 .valve-note{margin:10px 0 0 4px;color:var(--muted);font-size:11px;font-family:var(--mono);border-left:3px solid var(--accent3);padding-left:10px}
 .comp-table-wrap{overflow:auto;max-height:455px}
@@ -2908,6 +2910,15 @@ function filterStateKey(extra=''){
   const a=v=>Array.isArray(v)?v.join('|'):String(v);
   return [extra,DATA_VERSION,F&&F.con,a(F&&F.areaGrp),a(F&&F.area),a(F&&F.sys),a(F&&F.stage)].join('§');
 }
+function materialCacheSignature(){
+  // Performance-only safety: material rows may arrive after the first dashboard render.
+  // Include source lengths in the cache key so an early empty material cache cannot keep
+  // Spools / Supports / Valves stuck at zero after MAT_ROWS / TEST_PACK_ROWS are loaded.
+  const mr=(typeof MAT_ROWS!=='undefined'&&Array.isArray(MAT_ROWS))?MAT_ROWS.length:0;
+  const tr=(typeof TEST_PACK_ROWS!=='undefined'&&Array.isArray(TEST_PACK_ROWS))?TEST_PACK_ROWS.length:0;
+  const tp=(typeof TP!=='undefined'&&Array.isArray(TP))?TP.length:0;
+  return 'matsig:'+mr+':'+tr+':'+tp;
+}
 
 
 let F={con:'ALL',areaGrp:['ALL'],area:['ALL'],sys:['ALL'],stage:['ALL']};
@@ -3459,8 +3470,17 @@ function makeVbar(groups, maxH=120){
 }
 
 function kpi(label,val,p,cls='',deltaMarkup=''){
+  const KPI_LABEL_ALIAS={
+    'QC Punch A Cleared':'QC A Cleared',
+    'QC Punch A Confirmed':'QC A Confirmed',
+    'Return for Reinstatement':'Return Reinst.',
+    'QC Punch List Return':'QC Punch Return',
+    'QC Reinstatement Sign':'QC Reinst. Sign',
+    'Release to PCOM':'Release to PCOM'
+  };
+  const shown=KPI_LABEL_ALIAS[label]||label;
   return `<div class="kpi ${cls}">
-    <div class="kpi-label">${label}</div>
+    <div class="kpi-label" title="${escapeHtml(label)}">${shown}</div>
     <div class="kpi-val">${val}</div>
     ${deltaMarkup||''}
     ${p!==null?`<div class="kpi-pct">${p}%</div>`:''}
@@ -3762,7 +3782,7 @@ function filteredMaterialRows(data,ignoreArea=false){
   if(baseData&&typeof baseData==='object'&&MATERIAL_ROWS_CACHE){
     let bucket=MATERIAL_ROWS_CACHE.get(baseData);
     if(!bucket){bucket=new Map();MATERIAL_ROWS_CACHE.set(baseData,bucket);}
-    const key=filterStateKey('mat:'+(ignoreArea?'1':'0'));
+    const key=filterStateKey('mat:'+(ignoreArea?'1':'0')+':'+materialCacheSignature());
     if(bucket.has(key))return bucket.get(key);
     const rows=filteredMaterialRowsNoCache(baseData,ignoreArea);
     bucket.set(key,rows);
@@ -5944,7 +5964,7 @@ function renderPunchCommentsList(commentRows){
   if(pager)pager.innerHTML=punchCommentsPagerHTML(rows.length);
 }
 function renderPunchPage(data){
-  try{rebuildPunchStatsFromTestPackRowsIfNeeded(true);}catch(err){console.warn('Punch rebuild failed:',err);}
+  try{if(typeof rebuildPunchStatsFromTestPackRowsIfNeeded==='function')rebuildPunchStatsFromTestPackRowsIfNeeded(true);}catch(err){console.warn('Punch rebuild failed:',err);}
   // V80 performance-only: do not clear PUNCH_FAST_CACHE on every render.
   // It is already cleared when filters/data change, so results stay identical and re-filtering is faster.
   const filtered=data||getFiltered();
@@ -6051,7 +6071,7 @@ async function fetchAndApplyLiveData(options){
     (0,eval)(code);
 
     if(typeof ensureLightTestPackRows==='function')ensureLightTestPackRows();
-    try{rebuildPunchStatsFromTestPackRowsIfNeeded(true);}catch(e){console.warn('Punch rebuild after live load failed:',e);}
+    try{if(typeof rebuildPunchStatsFromTestPackRowsIfNeeded==='function')rebuildPunchStatsFromTestPackRowsIfNeeded(true);}catch(e){console.warn('Punch rebuild after live load failed:',e);}
     DATA_VERSION++;
     if(typeof invalidateDashboardCaches==='function')invalidateDashboardCaches();
     if(typeof prewarmTpAreasCache==='function')prewarmTpAreasCache();
