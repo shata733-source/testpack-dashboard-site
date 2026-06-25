@@ -118,7 +118,7 @@ select.fsel.native-hidden{display:none!important}
 .hbar-row{display:flex;align-items:center;gap:8px}
 .hbar-lbl{font-size:12px;font-weight:600;color:var(--text);width:80px;text-align:right;flex-shrink:0;font-family:var(--mono)}
 .hbar-wrap{flex:1;height:20px;background:var(--surf2);border-radius:4px;overflow:visible;position:relative}
-.hbar-fill{height:100%;border-radius:4px;display:flex;align-items:center;justify-content:flex-end;transition:width .5s;position:relative}
+.hbar-fill{height:100%;border-radius:4px;display:flex;align-items:center;justify-content:flex-end;transition:none;position:relative}
 .hbar-cnt{font-size:11px;font-family:var(--mono);font-weight:800;color:#fff;padding:0 7px;white-space:nowrap;line-height:20px;text-shadow:0 1px 2px rgba(0,0,0,.55)}
 .hbar-cnt.outside{position:absolute;left:calc(100% + 6px);top:50%;transform:translateY(-50%);color:var(--text);text-shadow:none;padding:0}
 
@@ -127,7 +127,7 @@ select.fsel.native-hidden{display:none!important}
 .pipe-row{display:flex;align-items:center;gap:10px}
 .pipe-stage{font-size:12px;font-weight:500;color:var(--text);width:200px;flex-shrink:0;font-family:var(--mono)}
 .pipe-bar{flex:1;height:18px;background:var(--surf2);border-radius:4px;overflow:hidden}
-.pipe-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--accent),rgba(0,212,255,.35));transition:width .6s}
+.pipe-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,var(--accent),rgba(0,212,255,.35));transition:none}
 .pipe-pct{font-size:12px;font-weight:600;color:var(--text);font-family:var(--mono);width:80px;text-align:left;flex-shrink:0}
 
 /* PUNCH */
@@ -137,7 +137,7 @@ select.fsel.native-hidden{display:none!important}
 .punch-total{font-size:22px;font-weight:700;font-family:var(--mono)}
 .punch-sub{font-size:11px;color:var(--dim);margin-top:3px}
 .punch-prog{height:4px;background:var(--surf3);border-radius:2px;margin-top:10px;overflow:hidden}
-.punch-prog-fill{height:100%;border-radius:2px;transition:width .5s}
+.punch-prog-fill{height:100%;border-radius:2px;transition:none}
 
 /* VERTICAL BAR CHART */
 .chart-outer{overflow-x:auto;padding-bottom:8px}
@@ -484,7 +484,7 @@ html,body{overflow-x:hidden}
 
 
 /* === Light performance tuning: no calculation changes === */
-.page{contain:layout paint}
+/* V81: removed layout containment from .page to avoid hidden-page layout/paint delays. */
 .card,.kpi,.mat-big,.punch-box{content-visibility:auto;contain-intrinsic-size:180px}
 .tbl-wrap,.comp-table-wrap,.valve-table-wrap{will-change:scroll-position}
 .tab,.fbtn,.multi-dd-btn,.action-btn{touch-action:manipulation}
@@ -2865,10 +2865,16 @@ let TEST_PACK_HEADER_MAP=null;
 let DATA_VERSION=0;
 let FILTER_CACHE={key:'',data:null};
 let PUNCH_FAST_CACHE={};
+let TP_AREAS_CACHE=(typeof WeakMap!=='undefined')?new WeakMap():null;
+let ALL_AREAS_CACHE={version:-1,areas:null};
+let MATERIAL_ROWS_CACHE=(typeof WeakMap!=='undefined')?new WeakMap():null;
 function invalidateDashboardCaches(){
   FILTER_CACHE={key:'',data:null};
   PUNCH_FAST_CACHE={};
   TEST_PACK_HEADER_MAP=null;
+  TP_AREAS_CACHE=(typeof WeakMap!=='undefined')?new WeakMap():null;
+  ALL_AREAS_CACHE={version:-1,areas:null};
+  MATERIAL_ROWS_CACHE=(typeof WeakMap!=='undefined')?new WeakMap():null;
 }
 function getTestPackHeaderMap(){
   if(TEST_PACK_HEADER_MAP)return TEST_PACK_HEADER_MAP;
@@ -2953,9 +2959,12 @@ function extractAreas(v){
   return list.length?list:[s];
 }
 function getAllAreasFromTP(){
+  if(ALL_AREAS_CACHE&&ALL_AREAS_CACHE.version===DATA_VERSION&&Array.isArray(ALL_AREAS_CACHE.areas))return ALL_AREAS_CACHE.areas;
   const vals=[];
-  (TP||[]).forEach(r=>extractAreas(r.areaRaw||r.area||'').forEach(a=>vals.push(a)));
-  return [...new Set(vals)].sort(primaryAreaSort);
+  (TP||[]).forEach(r=>tpAreas(r).forEach(a=>vals.push(a)));
+  const areas=[...new Set(vals)].sort(primaryAreaSort);
+  ALL_AREAS_CACHE={version:DATA_VERSION,areas};
+  return areas;
 }
 function getAllAreaGroupsFromAreas(areas){
   return [...new Set((areas||[]).map(areaGroupOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
@@ -3166,7 +3175,7 @@ function refresh(immediate=false){
   if(_refreshFrame){cancelAnimationFrame(_refreshFrame);_refreshFrame=null;}
   const run=()=>{_refreshFrame=requestAnimationFrame(()=>{_refreshFrame=null;_doRefresh();});};
   if(immediate)run();
-  else _refreshTimer=setTimeout(run,20);
+  else _refreshTimer=setTimeout(run,16);
 }
 function _doRefresh(){
   const data=getFiltered();
@@ -3184,16 +3193,31 @@ function _doRefresh(){
 }
 
 // HELPERS
-function h(el,html){const node=document.getElementById(el); if(node) node.innerHTML=html;}
+function h(el,html){
+  const node=document.getElementById(el);
+  if(!node)return;
+  const next=String(html==null?'':html);
+  if(node.__cccLastHtml!==next){node.innerHTML=next;node.__cccLastHtml=next;}
+}
 function sum(arr,fn){return arr.reduce((s,r)=>s+(fn(r)||0),0);}
 function cnt(arr,fn){return arr.filter(fn).length;}
 function hasStage(r,s){return!!(r.st&&r.st[s]);}
 function hasCnsLC(r){return hasStage(r,'CNS L/C Completed');}
 function tpAreas(r){
+  if(r&&typeof r==='object'&&TP_AREAS_CACHE){
+    const cached=TP_AREAS_CACHE.get(r);
+    if(cached)return cached;
+  }
   const raw=extractAreas(r&&((r.areaRaw||r.area)||''));
   const arr=Array.isArray(r&&r.areas)&&r.areas.length?r.areas:[];
   const merged=[...new Set([...arr,...raw].map(a=>clean(a).toUpperCase()).filter(Boolean))].sort(areaSort);
+  if(r&&typeof r==='object'&&TP_AREAS_CACHE)TP_AREAS_CACHE.set(r,merged);
   return merged;
+}
+function prewarmTpAreasCache(){
+  const run=()=>{try{(TP||[]).forEach(r=>tpAreas(r));}catch(e){}};
+  if(typeof requestIdleCallback==='function')requestIdleCallback(run,{timeout:1200});
+  else setTimeout(run,80);
 }
 function normalizeAreas(v){return extractAreas(v);}
 function fmtNum(v,d=0){return Number(v||0).toLocaleString(undefined,{maximumFractionDigits:d});}
@@ -3377,11 +3401,28 @@ function buildSystemAgg(data){
   return sysMap;
 }
 function stageMetricRows(data){
+  data=data||[];
   const total=data.length,totalLen=sum(data,r=>r.len),totalVol=sum(data,r=>r.vol);
+  const byStage=new Map(STAGE_ORDER.map(stage=>[stage,{stage,count:0,len:0,vol:0,sp:0,su:0,va:0,pab:0,pbb:0,pcb:0}]));
+  data.forEach(r=>{
+    STAGE_ORDER.forEach(stage=>{
+      const ok=stage==='CNS L/C Completed'?hasCnsLC(r):hasStage(r,stage);
+      if(!ok)return;
+      const x=byStage.get(stage);
+      x.count++;
+      x.len+=Number(r.len)||0;
+      x.vol+=Number(r.vol)||0;
+      x.sp+=Number(r.sp)||0;
+      x.su+=Number(r.su)||0;
+      x.va+=Number(r.va)||0;
+      x.pab+=Number(r.pab)||0;
+      x.pbb+=Number(r.pbb)||0;
+      x.pcb+=Number(r.pcb)||0;
+    });
+  });
   return STAGE_ORDER.map(stage=>{
-    const ds=data.filter(r=>stage==='CNS L/C Completed'?hasCnsLC(r):hasStage(r,stage));
-    const len=sum(ds,r=>r.len),vol=sum(ds,r=>r.vol);
-    return {stage,count:ds.length,pct:total>0?+(ds.length/total*100).toFixed(1):0,len,lenPct:totalLen>0?+(len/totalLen*100).toFixed(1):0,vol,volPct:totalVol>0?+(vol/totalVol*100).toFixed(1):0,sp:sum(ds,r=>r.sp),su:sum(ds,r=>r.su),va:sum(ds,r=>r.va),pab:sum(ds,r=>r.pab),pbb:sum(ds,r=>r.pbb),pcb:sum(ds,r=>r.pcb)};
+    const x=byStage.get(stage);
+    return {stage,count:x.count,pct:total>0?+(x.count/total*100).toFixed(1):0,len:x.len,lenPct:totalLen>0?+(x.len/totalLen*100).toFixed(1):0,vol:x.vol,volPct:totalVol>0?+(x.vol/totalVol*100).toFixed(1):0,sp:x.sp,su:x.su,va:x.va,pab:x.pab,pbb:x.pbb,pcb:x.pcb};
   });
 }
 
@@ -3516,8 +3557,9 @@ function renderOverview(data){
 
   renderMaterialKPIs('overviewMatKpi',data);
 
-  const chartAreas=getAllAreasFromTP().filter(a=>cnt(data,r=>tpAreas(r).includes(a))>0);
-  const areaCnts=chartAreas.map(a=>[a,cnt(data,r=>tpAreas(r).includes(a))]);
+  const areaCounter=new Map();
+  data.forEach(r=>tpAreas(r).forEach(a=>areaCounter.set(a,(areaCounter.get(a)||0)+1)));
+  const areaCnts=getAllAreasFromTP().map(a=>[a,areaCounter.get(a)||0]).filter(x=>x[1]>0);
   h('areaChart',areaCnts.length?hbar(areaCnts,Math.max(...areaCnts.map(x=>x[1]),1)):'<div class="muted">No area data</div>');
   const priCnts=[0,1,2,3,4,5].map(p=>[String(p),cnt(data,r=>r.pri===p)]);
   h('priChart',hbar(priCnts,Math.max(...priCnts.map(x=>x[1]),1),'linear-gradient(90deg,var(--accent3),rgba(245,158,11,.35))'));
@@ -3656,6 +3698,19 @@ function tempSupportExceptionRows(data){
 
 
 function filteredMaterialRows(data,ignoreArea=false){
+  const baseData=data||TP;
+  if(baseData&&typeof baseData==='object'&&MATERIAL_ROWS_CACHE){
+    let bucket=MATERIAL_ROWS_CACHE.get(baseData);
+    if(!bucket){bucket=new Map();MATERIAL_ROWS_CACHE.set(baseData,bucket);}
+    const key=filterStateKey('mat:'+(ignoreArea?'1':'0'));
+    if(bucket.has(key))return bucket.get(key);
+    const rows=filteredMaterialRowsNoCache(baseData,ignoreArea);
+    bucket.set(key,rows);
+    return rows;
+  }
+  return filteredMaterialRowsNoCache(baseData,ignoreArea);
+}
+function filteredMaterialRowsNoCache(data,ignoreArea=false){
   const tpSet=new Set((data||TP).map(r=>clean(r.tp).toUpperCase()));
   const baseRows=(typeof MAT_ROWS!=='undefined'&&Array.isArray(MAT_ROWS))?MAT_ROWS:[];
   const rows=baseRows.concat(tempSupportExceptionRows(data));
@@ -4392,7 +4447,7 @@ async function updateFromRemoteExcel(options){
     TEST_PACK_ROWS=compactTestPackRows(parsed.TEST_PACK_ROWS||[]);
     B_ITEM_ROWS=parsed.B_ITEM_ROWS||[];
     B_ITEM_HEADERS=parsed.B_ITEM_HEADERS||B_ITEM_SHEET_HEADERS.slice();
-    DATA_VERSION++; invalidateDashboardCaches();
+    DATA_VERSION++; invalidateDashboardCaches(); if(typeof prewarmTpAreasCache==='function')prewarmTpAreasCache();
     F.sys=['ALL'];
     F.stage=['ALL'];
     if(typeof rebuildSidebarFilters==='function')rebuildSidebarFilters();
@@ -4456,7 +4511,7 @@ function loadNewFile(input){
       TEST_PACK_ROWS=compactTestPackRows(parsed.TEST_PACK_ROWS||[]);
       B_ITEM_ROWS=parsed.B_ITEM_ROWS||[];
       B_ITEM_HEADERS=parsed.B_ITEM_HEADERS||B_ITEM_SHEET_HEADERS.slice();
-      DATA_VERSION++; invalidateDashboardCaches();
+      DATA_VERSION++; invalidateDashboardCaches(); if(typeof prewarmTpAreasCache==='function')prewarmTpAreasCache();
       F.sys=['ALL'];
       F.stage=['ALL'];
       populateSystems();
@@ -4896,6 +4951,7 @@ function applyDashboardSnapshot(snapshot){
   if(typeof rebuildSidebarFilters==='function')rebuildSidebarFilters();
   {applyMultiSelect(document.getElementById('fAreaGrp'),['ALL']); applyMultiSelect(document.getElementById('fArea'),['ALL']); applyMultiSelect(document.getElementById('fSys'),['ALL']); applyMultiSelect(document.getElementById('fStage'),['ALL']); if(typeof updateSidebarMultiDropdownLabels==='function')updateSidebarMultiDropdownLabels();}
   document.querySelectorAll('.sidebar .fbtn').forEach((b,i)=>b.classList.toggle('active',i===0));
+  if(typeof prewarmTpAreasCache==='function')prewarmTpAreasCache();
   return true;
 }
 
@@ -5936,8 +5992,9 @@ async function fetchAndApplyLiveData(options){
 
     if(typeof ensureLightTestPackRows==='function')ensureLightTestPackRows();
     try{rebuildPunchStatsFromTestPackRowsIfNeeded(true);}catch(e){console.warn('Punch rebuild after live load failed:',e);}
-    if(typeof invalidateDashboardCaches==='function')invalidateDashboardCaches();
     DATA_VERSION++;
+    if(typeof invalidateDashboardCaches==='function')invalidateDashboardCaches();
+    if(typeof prewarmTpAreasCache==='function')prewarmTpAreasCache();
 
     const remoteTime=(typeof window.DASHBOARD_DATA_UPDATED_AT!=='undefined')?window.DASHBOARD_DATA_UPDATED_AT:new Date().toISOString();
     LIVE_LAST_REFRESH_AT=remoteTime;
@@ -5968,7 +6025,7 @@ async function fetchAndApplyLiveData(options){
     await storeLiveSnapshot(current);
     await saveDashboardSnapshot('live-remote');
 
-    refresh();
+    forceStableDashboardPaint('live-remote');
     updateLiveStatus('',liveDateText(remoteTime));
     return true;
   }catch(err){
@@ -6205,6 +6262,7 @@ function showEmployerView(view,opts){
     if(bpage)bpage.classList.remove('active');
     if(dashOpt)dashOpt.classList.add('active');
     if(bOpt)bOpt.classList.remove('active');
+    if(typeof forceStableDashboardPaint==='function')setTimeout(()=>forceStableDashboardPaint('dashboard-visible'),0);
   }
 }
 function bItemRowsAvailable(){return Array.isArray(B_ITEM_ROWS)&&B_ITEM_ROWS.length>0;}
@@ -6385,13 +6443,26 @@ refresh=function(immediate){
   return out;
 };
 
+function forceStableDashboardPaint(reason){
+  if(typeof refresh!=='function')return;
+  try{refresh(true);}catch(e){}
+  try{requestAnimationFrame(()=>{try{refresh(true);}catch(e){}});}catch(e){}
+  setTimeout(()=>{try{refresh(true);}catch(e){}},120);
+}
 async function bootDashboard(){
   updateTodayDate();
   applySavedTheme();
   await loadUpdateDiffBaseline();
   setupDeltaDateInput();
   onDeltaModeChanged();
+  // V81: paint any already-saved snapshot before the live request finishes.
+  // This fixes the initial zero KPIs without changing any calculation logic.
+  try{
+    const hadSaved=await loadDashboardSnapshot();
+    if(hadSaved){syncLiveFilterUi(); forceStableDashboardPaint('saved-snapshot');}
+  }catch(e){console.warn('Saved snapshot boot skipped:',e);}
   await fetchAndApplyLiveData({initial:true});
+  forceStableDashboardPaint('live-loaded');
   scheduleLiveRefresh();
 }
 initPortalAccess();
