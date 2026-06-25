@@ -5,7 +5,7 @@ const CCC_AUTH_USER_SESSION_KEY  = 'ccc_bitem_auth_user_session';
 const CCC_PAGES = {
   dashboard: { title: 'Test Pack Dashboard', href: '/dashboard.html#/dashboard' },
   bitem: { title: 'B Punch Edit', href: '/bitem.html#/bitem' },
-  'bitem-monitoring': { title: 'B Item Monitoring', href: '/bitem-monitoring.html' },
+  'bitem-monitoring': { title: 'B Item Monitoring', href: '/bitem-monitoring.html#/monitoring' },
   users: { title: 'User Management', href: '/users.html' }
 };
 const CCC_EDIT_PAGES = ['bitem','users'];
@@ -40,9 +40,9 @@ function normalizePortalNext(raw){
   if(!n || n==='/' || n==='/index' || n==='/index.html')n='/projects.html';
   const map={
     '/projects':'/projects.html',
-    '/dashboard':'/dashboard.html',
-    '/bitem':'/bitem.html',
-    '/bitem-monitoring':'/bitem-monitoring.html',
+    '/dashboard':'/dashboard.html#/dashboard',
+    '/bitem':'/bitem.html#/bitem',
+    '/bitem-monitoring':'/bitem-monitoring.html#/monitoring',
     '/users':'/users.html',
     '/profile':'/profile.html'
   };
@@ -156,10 +156,10 @@ async function enforcePageAccess(roles=[], options={}){
 function fmsNav(active='', role='', userArg=null) {
   const user = userArg || authUser() || {role};
   role = role || String(user.role||'');
-  const dash = canViewPage('dashboard',user) ? `<div class="fms-item ${active==='dashboard'?'active':''}">DASHBOARD<div class="fms-drop"><div class="drop-section"><div class="drop-title">📊 Project Dashboards</div><a class="drop-link" href="/dashboard.html">Test Pack Dashboard</a></div></div></div>` : '';
-  const construction = canViewPage('bitem',user) ? `<div class="fms-item ${active==='construction'?'active':''}">CONSTRUCTION<div class="fms-drop"><div class="drop-section"><div class="drop-title">🔧 Construction Control</div><a class="drop-link" href="/bitem.html">B Punch Edit</a></div></div></div>` : '';
+  const dash = canViewPage('dashboard',user) ? `<div class="fms-item ${active==='dashboard'?'active':''}">DASHBOARD<div class="fms-drop"><div class="drop-section"><div class="drop-title">📊 Project Dashboards</div><a class="drop-link" href="/dashboard.html#/dashboard">Test Pack Dashboard</a></div></div></div>` : '';
+  const construction = canViewPage('bitem',user) ? `<div class="fms-item ${active==='construction'?'active':''}">CONSTRUCTION<div class="fms-drop"><div class="drop-section"><div class="drop-title">🔧 Construction Control</div><a class="drop-link" href="/bitem.html#/bitem">B Punch Edit</a></div></div></div>` : '';
   const monitorLinks = [];
-  if(canViewPage('bitem-monitoring',user)) monitorLinks.push('<a class="drop-link" href="/bitem-monitoring.html">B Item Monitoring</a>');
+  if(canViewPage('bitem-monitoring',user)) monitorLinks.push('<a class="drop-link" href="/bitem-monitoring.html#/monitoring">B Item Monitoring</a>');
   if(canViewPage('users',user)) monitorLinks.push('<a class="drop-link" href="/users.html">User Management</a>');
   const monitor = monitorLinks.length ? `<div class="fms-item ${active==='monitor'?'active':''}" id="monitorMenu">MONITOR<div class="fms-drop"><div class="drop-section"><div class="drop-title">🧭 Admin Monitoring</div>${monitorLinks.join('')}</div></div></div>` : '';
   return `<div class="fms-bar"><div class="fms-logo"><img src="/assets/ccc-logo.png" alt="CCC"><div><span>CCC</span> Control Platform</div></div><nav class="fms-menu"><a class="fms-item" href="/projects.html">HOME</a>${dash}${construction}${monitor}</nav><div class="project-select"><span>PROJECT</span><select><option>DPCU</option><option disabled>Future Project</option></select></div><div class="profile-menu"><button class="profile-btn" type="button">👤 Profile ▾</button><div class="profile-drop"><a href="/profile.html">My Profile</a><a href="/profile.html#password">Change Password</a><button type="button" onclick="logoutPortal()">Logout</button></div></div></div>`
