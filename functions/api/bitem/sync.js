@@ -83,17 +83,38 @@ async function fetchExistingByFingerprints(env, fps) {
   return out;
 }
 
+function upsertSignature(row) {
+  return Object.keys(row || {}).sort().join('\u001f');
+}
+
 async function upsertRows(env, rows) {
   if (!rows.length) return;
-  for (const part of chunks(rows, 200)) {
-    await sbJson(env, `/rest/v1/bitem_registry?on_conflict=fingerprint`, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'prefer': 'resolution=merge-duplicates,return=minimal'
-      },
-      body: JSON.stringify(part)
-    });
+
+  // PostgREST bulk insert/upsert requires every object inside the same JSON
+  // array to have the exact same set of keys. During sync we intentionally
+  // send different shapes: new rows include first_seen_at/user fields,
+  // changed existing rows include metadata/status, and unchanged rows only
+  // update active/last_seen_at/last_sync_id. Group by key-signature so we
+  // keep user/manual fields safe without forcing null/default values into
+  // columns that should not be touched.
+  const groups = new Map();
+  for (const row of rows) {
+    const key = upsertSignature(row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+
+  for (const groupRows of groups.values()) {
+    for (const part of chunks(groupRows, 200)) {
+      await sbJson(env, `/rest/v1/bitem_registry?on_conflict=fingerprint`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'prefer': 'resolution=merge-duplicates,return=minimal'
+        },
+        body: JSON.stringify(part)
+      });
+    }
   }
 }
 
