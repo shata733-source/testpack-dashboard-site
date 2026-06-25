@@ -9876,3 +9876,228 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   document.addEventListener('click',function(){ setTimeout(function(){ attachObservers(); if(lastKpiKey!==key()) scheduleKpi(true,20); if(lastStageKey!==key()) scheduleStage(true,25); },80); },true);
 })();
 </script>
+
+
+<script id="v78-bitem-api-single-owner-no-dance">
+/* V78 — B Item API single visual owner / no dancing
+   Correct source remains B Item Control backend API.
+   This block does not change Selenium, workflow, SQL, or B Item Control.
+   It only makes the dashboard visual B numbers have one final writer.
+*/
+(function(){
+  if(window.__V78_BITEM_API_SINGLE_OWNER_NO_DANCE__) return;
+  window.__V78_BITEM_API_SINGLE_OWNER_NO_DANCE__ = true;
+
+  function C(v){ return v==null?'':String(v).replace(/\s+/g,' ').trim(); }
+  function U(v){ return C(v).toUpperCase(); }
+  function esc(v){ return C(v).replace(/[&<>"']/g,function(ch){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]);}); }
+  function fmt(v){ v=Number(v||0); return Number.isFinite(v)?v.toLocaleString(): '0'; }
+  function fmtTotal(v){ v=Number(v||0); if(!Number.isFinite(v)) v=0; return v>=1000 ? (v/1000).toFixed(1)+'K' : v.toLocaleString(); }
+  function pct(c,t){ c=Number(c||0); t=Number(t||0); return t>0?Math.round(c/t*100):0; }
+  function fObj(){ try{return window.F || F || {};}catch(e){return window.F || {};} }
+  function arr(v){
+    if(Array.isArray(v)) return v.map(C).filter(Boolean).filter(function(x){return U(x)!=='ALL';});
+    var s=C(v); return (!s || U(s)==='ALL') ? [] : [s];
+  }
+  function contractor(){
+    var c=C(fObj().con||'ALL');
+    if(!c || U(c)==='ALL') return 'ALL';
+    if(/JGC/i.test(c)) return 'JGC Direct MP';
+    if(/CCC/i.test(c)) return 'CCC';
+    return c;
+  }
+  function areasFromGroups(groups){
+    groups=(groups||[]).map(U).filter(Boolean);
+    if(!groups.length) return [];
+    try{
+      var all=(typeof getAllAreasFromTP==='function'?getAllAreasFromTP():[]).map(C).filter(Boolean);
+      return all.filter(function(a){
+        try{return groups.indexOf(U(areaGroupOf(a)))>=0;}catch(e){return groups.indexOf(U(a).charAt(0))>=0;}
+      });
+    }catch(e){return [];}
+  }
+  function canonicalParams(){
+    var f=fObj();
+    var p=new URLSearchParams();
+    p.set('contractor', contractor());
+    var areas=arr(f.area);
+    if(!areas.length) areas=areasFromGroups(arr(f.areaGrp));
+    if(areas.length) p.set('area', areas.join(','));
+    var stages=arr(f.stage); if(stages.length) p.set('stage', stages.join(','));
+    return p;
+  }
+  function key(){ return canonicalParams().toString(); }
+  function headers(){
+    var h={'Accept':'application/json'};
+    try{
+      var t=localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||localStorage.getItem('ccc_auth_token')||localStorage.getItem('cccToken')||'';
+      if(t) h.Authorization='Bearer '+t;
+    }catch(e){}
+    return h;
+  }
+  function activePage(){ try{return String(window.currentPage||currentPage||'');}catch(e){return String(window.currentPage||'');} }
+  function visible(id){ var el=document.getElementById(id); return !!(el && el.offsetParent!==null); }
+  function needKpi(){ return activePage()==='overview' || activePage()==='punch' || visible('punchCards') || visible('punchPageCards'); }
+  function needStage(){ return activePage()==='stagescontrol' || visible('bPunchControlBoxes'); }
+
+  var STATE={kpiKey:'',kpi:null,stageKey:'',stage:null};
+  var writing=false, kpiSeq=0, stageSeq=0, kpiTimer=0, stageTimer=0, kpiAbort=null, stageAbort=null;
+
+  function responseJson(obj){return new Response(JSON.stringify(obj||{}),{status:200,headers:{'content-type':'application/json; charset=utf-8','x-v78-bitem-single-owner':'compat'}});}
+  var nativeFetch=window.fetch?window.fetch.bind(window):null;
+  if(nativeFetch && !window.__V78_FETCH_COMPAT_NORMALIZER__){
+    window.__V78_FETCH_COMPAT_NORMALIZER__=true;
+    window.fetch=function(input,init){
+      var raw=(typeof input==='string')?input:(input&&input.url)||'';
+      try{
+        var url=new URL(raw, location.origin);
+        var isK=/\/api\/bitem\/kpi$/i.test(url.pathname);
+        var isS=/\/api\/bitem\/stage-control$/i.test(url.pathname);
+        if((isK||isS) && url.searchParams.get('__v78_owner')!=='1'){
+          var k=key();
+          if(isK && STATE.kpi && STATE.kpiKey===k) return Promise.resolve(responseJson(STATE.kpi));
+          if(isS && STATE.stage && STATE.stageKey===k) return Promise.resolve(responseJson(STATE.stage));
+          var cp=canonicalParams();
+          var out=new URL(url.pathname, location.origin);
+          cp.forEach(function(v,n){out.searchParams.set(n,v);});
+          out.searchParams.set('__v78_compat','1');
+          out.searchParams.set('_',Date.now());
+          return nativeFetch(out.pathname+out.search, init);
+        }
+      }catch(e){}
+      return nativeFetch(input,init);
+    };
+  }
+
+  function punchCardHTML(data,k,loading){
+    if(loading){
+      return '<div class="punch-box" data-v78-bitem="kpi" data-key="'+esc(k)+'">'+
+        '<div class="punch-cat">Punch B</div><div class="punch-total" style="color:var(--orange)">--</div>'+ 
+        '<div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source locked</div>'+ 
+        '<div class="punch-prog"><div class="punch-prog-fill" style="width:0%;background:var(--orange)"></div></div></div>';
+    }
+    data=data&&data.punchB?data.punchB:(data||{});
+    var total=Number(data.total||0), cleared=Number(data.cleared||0), bal=Number(data.balance);
+    if(!Number.isFinite(bal)) bal=Math.max(total-cleared,0);
+    var pc=pct(cleared,total);
+    return '<div class="punch-box" data-v78-bitem="kpi" data-key="'+esc(k)+'" data-total="'+total+'" data-cleared="'+cleared+'" data-balance="'+bal+'">'+
+      '<div class="punch-cat">Punch B</div><div class="punch-total" style="color:var(--orange)">'+fmtTotal(total)+'</div>'+ 
+      '<div class="punch-sub">Cleared: '+fmt(cleared)+'</div><div class="punch-sub" style="color:var(--red)">Balance: '+fmt(bal)+'</div>'+ 
+      '<div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:var(--orange)"></div></div>'+ 
+      '<div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div></div>';
+  }
+  function replaceBCard(containerId,data,k,loading){
+    var wrap=document.getElementById(containerId); if(!wrap) return;
+    var cards=[].slice.call(wrap.children||[]);
+    var card=cards.find(function(x){var c=x.querySelector&&x.querySelector('.punch-cat');return c&&/Punch\s*B/i.test(c.textContent||'');}) || cards[1];
+    if(!card) return;
+    if(card.getAttribute('data-v78-bitem')==='kpi' && card.getAttribute('data-key')===k && !loading && data && Number(card.getAttribute('data-total')||-1)===Number((data.punchB||data||{}).total||0)) return;
+    card.outerHTML=punchCardHTML(data,k,loading);
+  }
+  function applyKpi(data,loading){
+    var k=key();
+    writing=true;
+    try{ replaceBCard('punchCards',data,k,loading); replaceBCard('punchPageCards',data,k,loading); }
+    finally{ setTimeout(function(){writing=false;},50); }
+  }
+  async function loadKpi(force){
+    if(!needKpi()) return STATE.kpi;
+    var k=key();
+    if(!force && STATE.kpi && STATE.kpiKey===k){ applyKpi(STATE.kpi,false); return STATE.kpi; }
+    if(kpiAbort) try{kpiAbort.abort();}catch(e){}
+    kpiAbort=('AbortController' in window)?new AbortController():null;
+    var seq=++kpiSeq;
+    applyKpi((STATE.kpiKey===k?STATE.kpi:null), !(STATE.kpiKey===k&&STATE.kpi));
+    var p=canonicalParams(); p.set('__v78_owner','1'); p.set('_',Date.now());
+    try{
+      var r=await nativeFetch('/api/bitem/kpi?'+p.toString(),{headers:headers(),cache:'no-store',signal:kpiAbort?kpiAbort.signal:undefined});
+      var txt=await r.text(); var j; try{j=JSON.parse(txt);}catch(e){throw new Error('B KPI non-JSON: '+txt.slice(0,120));}
+      if(!r.ok || j.ok===false) throw new Error((j&&j.error)||('HTTP '+r.status));
+      if(seq!==kpiSeq || k!==key()) return j;
+      STATE.kpiKey=k; STATE.kpi=j; applyKpi(j,false); return j;
+    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V78] B KPI failed:',e&&e.message||e); if(STATE.kpiKey===k&&STATE.kpi) applyKpi(STATE.kpi,false); }
+  }
+
+  function stageBox(title,obj,color,loading){
+    if(loading){return '<div class="punch-box" data-v78-bitem="stage"><div class="punch-cat">'+esc(title)+'</div><div class="punch-total" style="color:'+color+'">--</div><div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source locked</div><div class="punch-prog"><div class="punch-prog-fill" style="width:0%;background:'+color+'"></div></div></div>';}
+    obj=obj||{}; var total=Number(obj.total||0), cleared=Number(obj.cleared||0), bal=Number(obj.balance); if(!Number.isFinite(bal)) bal=Math.max(total-cleared,0); var pc=pct(cleared,total);
+    return '<div class="punch-box" data-v78-bitem="stage" data-total="'+total+'"><div class="punch-cat">'+esc(title)+'</div><div class="punch-total" style="color:'+color+'">'+fmt(total)+'</div><div class="punch-sub">Cleared: '+fmt(cleared)+'</div><div class="punch-sub" style="color:var(--red)">Balance: '+fmt(bal)+'</div><div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:'+color+'"></div></div><div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div></div>';
+  }
+  function bars(items,color,loading){
+    if(loading) return '<div class="hbar-row" data-v78-bitem="stage"><div class="hbar-lbl">Loading...</div><div class="hbar-wrap"><div class="hbar-fill" style="width:2%;background:'+color+'"><span class="hbar-cnt outside">--</span></div></div></div>';
+    items=Array.isArray(items)?items:[]; var mx=Math.max.apply(null,items.map(function(x){return Number(x[1]||0);}).concat([1]));
+    return items.map(function(x){var label=C(x[0])||'Other', val=Number(x[1]||0), w=val>0?Math.max(2,val/mx*100):0; return '<div class="hbar-row" data-v78-bitem="stage"><div class="hbar-lbl">'+esc(label)+'</div><div class="hbar-wrap"><div class="hbar-fill" style="width:'+w+'%;background:'+color+'"><span class="hbar-cnt '+(val/mx<.18?'outside':'')+'">'+fmt(val)+'</span></div></div></div>';}).join('');
+  }
+  function retObj(d){ return d && (d.ret || d.return_b || d.qc_return || d.qcReturn) || {}; }
+  function applyStage(data,loading){
+    var k=key(); writing=true;
+    try{
+      var box=document.getElementById('bPunchControlBoxes');
+      if(box) box.innerHTML=stageBox('CNS B Punch',data&&data.cns||{},'var(--orange)',loading)+stageBox('QC Return B Punch',data?retObj(data):{},'var(--accent2)',loading);
+      var party=document.getElementById('bPunchTypeChart'); if(party) party.innerHTML=bars(data&&data.party_counts||[['CNS',0],['ENG',0]],'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))',loading);
+      var mat=document.getElementById('bPunchMatChart'); if(mat) mat.innerHTML=bars(data&&data.material_counts||[],'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))',loading);
+    }finally{ setTimeout(function(){writing=false;},70); }
+  }
+  async function loadStage(force){
+    if(!needStage()) return STATE.stage;
+    var k=key();
+    if(!force && STATE.stage && STATE.stageKey===k){ applyStage(STATE.stage,false); return STATE.stage; }
+    if(stageAbort) try{stageAbort.abort();}catch(e){}
+    stageAbort=('AbortController' in window)?new AbortController():null;
+    var seq=++stageSeq;
+    applyStage((STATE.stageKey===k?STATE.stage:null), !(STATE.stageKey===k&&STATE.stage));
+    var p=canonicalParams(); p.set('__v78_owner','1'); p.set('_',Date.now());
+    try{
+      var r=await nativeFetch('/api/bitem/stage-control?'+p.toString(),{headers:headers(),cache:'no-store',signal:stageAbort?stageAbort.signal:undefined});
+      var txt=await r.text(); var j; try{j=JSON.parse(txt);}catch(e){throw new Error('B stage non-JSON: '+txt.slice(0,120));}
+      if(!r.ok || j.ok===false) throw new Error((j&&j.error)||('HTTP '+r.status));
+      if(seq!==stageSeq || k!==key()) return j;
+      STATE.stageKey=k; STATE.stage=j; applyStage(j,false); return j;
+    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V78] B stage failed:',e&&e.message||e); if(STATE.stageKey===k&&STATE.stage) applyStage(STATE.stage,false); }
+  }
+  function schedule(force){
+    clearTimeout(kpiTimer); clearTimeout(stageTimer);
+    kpiTimer=setTimeout(function(){loadKpi(!!force);},45);
+    stageTimer=setTimeout(function(){loadStage(!!force);},65);
+  }
+  window.refreshDashboardBItemKpi=function(force){return loadKpi(!!force);};
+  window.refreshStageControlBItemD1=function(force){return loadStage(!!force);};
+  window.refreshStagePendingReinstScopeD1=function(force){return loadStage(!!force);};
+
+  function hook(name){
+    var fn=window[name]; if(typeof fn!=='function' || fn.__v78BitemOwner) return;
+    window[name]=function(){ var out=fn.apply(this,arguments); schedule(true); return out; };
+    window[name].__v78BitemOwner=true;
+    try{ if(name==='setF') setF=window[name]; if(name==='setMultiF') setMultiF=window[name]; if(name==='resetFilters') resetFilters=window[name]; }catch(e){}
+  }
+  hook('setF'); hook('setMultiF'); hook('resetFilters');
+  function hookRender(name){
+    var fn=window[name]; if(typeof fn!=='function' || fn.__v78BitemOwner) return;
+    window[name]=function(){ var out=fn.apply(this,arguments); schedule(false); return out; };
+    window[name].__v78BitemOwner=true;
+    try{ if(name==='renderOverview') renderOverview=window[name]; if(name==='renderPunchPage') renderPunchPage=window[name]; if(name==='renderStagesControl') renderStagesControl=window[name]; }catch(e){}
+  }
+  hookRender('renderOverview'); hookRender('renderPunchPage'); hookRender('renderStagesControl');
+
+  function guardNode(id,fn){
+    if(!('MutationObserver' in window)) return;
+    var el=document.getElementById(id); if(!el || el.__v78Guard) return; el.__v78Guard=true;
+    new MutationObserver(function(){
+      if(writing) return;
+      clearTimeout(el.__v78GuardTimer);
+      el.__v78GuardTimer=setTimeout(function(){ try{fn();}catch(e){} },15);
+    }).observe(el,{childList:true,subtree:true});
+  }
+  function attachGuards(){
+    guardNode('punchCards',function(){ if(STATE.kpiKey===key()&&STATE.kpi) applyKpi(STATE.kpi,false); else loadKpi(false); });
+    guardNode('punchPageCards',function(){ if(STATE.kpiKey===key()&&STATE.kpi) applyKpi(STATE.kpi,false); else loadKpi(false); });
+    guardNode('bPunchControlBoxes',function(){ if(STATE.stageKey===key()&&STATE.stage) applyStage(STATE.stage,false); else loadStage(false); });
+    guardNode('bPunchTypeChart',function(){ if(STATE.stageKey===key()&&STATE.stage) applyStage(STATE.stage,false); });
+    guardNode('bPunchMatChart',function(){ if(STATE.stageKey===key()&&STATE.stage) applyStage(STATE.stage,false); });
+  }
+  function boot(){ attachGuards(); schedule(false); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+  window.addEventListener('hashchange',function(){ setTimeout(boot,100); });
+  document.addEventListener('click',function(){ setTimeout(boot,80); },true);
+})();
+</script>
