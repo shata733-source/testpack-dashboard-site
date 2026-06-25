@@ -3499,7 +3499,11 @@ function filteredPunchEvents(rows){
 // 429 Reinstatement TP list from the V21 script so selected overview cards follow
 // the same contractor-scope behavior used by B Item / Reinstatement views.
 function overviewReinstatementCccSet(){
-  if(window.__overviewReinstCccSet) return window.__overviewReinstCccSet;
+  // V86: do not cache an empty set during the very first render.
+  // The 429 Reinstatement list lives in a later script block, so the first Overview render
+  // may happen before that block is parsed. Caching empty here made the new cards stay 0
+  // until a later manual filter action.
+  if(window.__overviewReinstCccSet && window.__overviewReinstCccSet.size) return window.__overviewReinstCccSet;
   let list=[];
   try{
     const sc=document.getElementById('final-v21-exact-reinstatement-filter-bitem-control-fix');
@@ -3507,8 +3511,9 @@ function overviewReinstatementCccSet(){
     const m=txt.match(/const\s+REINST_CCC\s*=\s*new\s+Set\((\[[\s\S]*?\])\.map/);
     if(m&&m[1]) list=JSON.parse(m[1]);
   }catch(e){console.warn('[overview] could not read reinstatement list',e);}
-  window.__overviewReinstCccSet=new Set((list||[]).map(x=>clean(x).toUpperCase()).filter(Boolean));
-  return window.__overviewReinstCccSet;
+  const set=new Set((list||[]).map(x=>clean(x).toUpperCase()).filter(Boolean));
+  if(set.size) window.__overviewReinstCccSet=set;
+  return set;
 }
 function overviewReinstatementFilteredData(){
   const reinstSet=overviewReinstatementCccSet();
@@ -8525,6 +8530,25 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   window.addEventListener('hashchange',()=>setTimeout(()=>{if(bitemActive()){ensureRowsOnce().then(()=>window.renderBItemControl(true));}},300));
 })();
 </script>
+
+<script id="v86-overview-reinstatement-first-load-repaint">
+(function(){
+  if(window.__V86_OVERVIEW_REINST_FIRST_LOAD_REPAINT__) return;
+  window.__V86_OVERVIEW_REINST_FIRST_LOAD_REPAINT__ = true;
+  function repaintOverviewReinstCards(){
+    try{
+      window.__overviewReinstCccSet = null;
+      var ov = document.getElementById('page-overview');
+      if(ov && ov.classList && ov.classList.contains('active') && typeof renderOverview === 'function'){
+        renderOverview(typeof getFiltered === 'function' ? getFiltered() : (Array.isArray(window.TP) ? window.TP : []));
+      }
+    }catch(e){ console.warn('[V86] overview reinstatement repaint skipped:', e && e.message || e); }
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(repaintOverviewReinstCards, 0); setTimeout(repaintOverviewReinstCards, 250); });
+  else { setTimeout(repaintOverviewReinstCards, 0); setTimeout(repaintOverviewReinstCards, 250); }
+})();
+</script>
+
 
 
 
