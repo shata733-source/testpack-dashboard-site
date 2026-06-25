@@ -2836,33 +2836,8 @@ html,body{overflow-x:hidden}
 
 </div><!-- /dashboardApp -->
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js">
-// PUNCH_PAGE_FORCE_VISIBLE_PATCH_20260612
-
-// FINAL_B_STAGE_AND_SIDEBAR_PATCH_20260612
-
-// RMC_PERCENT_SHARE_FIX_20260612
-
-// RMC_TOTAL_TP_PERCENT_AND_SPEED_PATCH_20260612
-
-// STAGES_CONTROL_REINSTATEMENT_B_PATCH_20260613
-
-// STAGES_CONTROL_V2_PENDING_B_EXPORT_20260613
-
-// STAGES_CONTROL_V3_SEARCH_PENDING_20260614
-
-// STAGES_CONTROL_V4_B_RETURNS_FIGURES_EXPORT_FILTER_SEARCH_20260614
-
-// STAGES_CONTROL_V5_CLASSIFICATION_LAYOUT_FOCUS_20260614
-
-// FINAL_FOCUS_FIXED_CONSTRUCTION_NOTE_20260614
-
-// B_PUNCH_CONTROL_BOX_FILL_20260614
-
-// B_ITEM_DEDICATED_SOURCE_V18_20260618
-
-// TEMP_SUPPORT_EXCEPTION_4_TPS_20260614
-</script>
+<script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- V80 performance-only: XLSX is loaded without blocking the dashboard boot. -->
 <script>
 // DATA_START
 var TP=window.TP||[];
@@ -4872,7 +4847,7 @@ function addAgg(obj,key,stage,val){
 
 
 const DASHBOARD_CACHE_KEY='testpackDashboard.originalScope.lastUpdate.v18.bItemSource';
-const LIVE_DATA_URL='https://raw.githubusercontent.com/shata733-source/testpack-data/main/dashboard_data.js';
+const LIVE_DATA_URL='/api/dashboard-data'; // V80 performance-only proxy; same dashboard_data.js content
 const LIVE_REFRESH_MS=60*60*1000;
 // Baseline reset key: this version treats the first loaded live data after deployment as the new baseline.
 const LIVE_LAST_SNAPSHOT_KEY='testpackDashboard.originalScope.live.lastSnapshot.v4.bItemSource';
@@ -5854,7 +5829,8 @@ function renderPunchCommentsList(commentRows){
 }
 function renderPunchPage(data){
   try{rebuildPunchStatsFromTestPackRowsIfNeeded(true);}catch(err){console.warn('Punch rebuild failed:',err);}
-  PUNCH_FAST_CACHE={};
+  // V80 performance-only: do not clear PUNCH_FAST_CACHE on every render.
+  // It is already cleared when filters/data change, so results stay identical and re-filtering is faster.
   const filtered=data||getFiltered();
 
   try{
@@ -5933,9 +5909,27 @@ async function fetchAndApplyLiveData(options){
   updateLiveStatus('loading',initial?'loading...':'refreshing...');
   const before=currentDashboardSnapshot('before-live-refresh');
   const previousStored=await loadStoredLiveSnapshot();
+  // V80 performance-only fast boot:
+  // Show the last saved snapshot immediately, then fetch the latest data in the background.
+  // This does not change any calculation logic; it only avoids a blank/slow first paint.
+  if(initial && previousStored && Array.isArray(previousStored.TP) && previousStored.TP.length && !window.__CCC_V80_FAST_BOOT_APPLIED__){
+    window.__CCC_V80_FAST_BOOT_APPLIED__=true;
+    try{
+      if(applyDashboardSnapshot(previousStored)){
+        CURRENT_LIVE_SNAPSHOT=previousStored;
+        LIVE_DATA_SOURCE='cached-live';
+        LIVE_LAST_REFRESH_AT=previousStored.remoteUpdatedAt||previousStored.savedAt||LIVE_LAST_REFRESH_AT;
+        LIVE_NEXT_REFRESH_AT=Date.now()+LIVE_REFRESH_MS;
+        syncLiveFilterUi();
+        refresh();
+        updateLiveStatus('', LIVE_LAST_REFRESH_AT?liveDateText(LIVE_LAST_REFRESH_AT):'cached');
+      }
+    }catch(e){console.warn('Fast cached boot failed:',e);}
+  }
   try{
-    const url=LIVE_DATA_URL+'?v='+Date.now()+'&rnd='+Math.random().toString(36).slice(2);
-    const res=await fetch(url,{cache:'no-store'});
+    const isCachedEndpoint=/^\/api\/dashboard-data(?:$|[?#])/.test(LIVE_DATA_URL);
+    const url=isCachedEndpoint?LIVE_DATA_URL:(LIVE_DATA_URL+'?v='+Date.now()+'&rnd='+Math.random().toString(36).slice(2));
+    const res=await fetch(url,isCachedEndpoint?{cache:'default'}:{cache:'no-store'});
     if(!res.ok)throw new Error('HTTP '+res.status);
     const code=await res.text();
     (0,eval)(code);
@@ -8525,7 +8519,7 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   }
   document.addEventListener('DOMContentLoaded',function(){ setTimeout(hardRoute,50); setTimeout(hardRoute,500); setTimeout(hardRoute,1500); setTimeout(hardRoute,3500); });
   window.addEventListener('load',function(){ setTimeout(hardRoute,100); setTimeout(hardRoute,1200); });
-  setInterval(hardRoute,2500);
+  // V80 performance-only: no repeated 2.5s hardRoute repaint. One-shot route fixes above remain active.
 })();
 </script>
 
@@ -9425,3 +9419,9 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   setTimeout(function(){ turboRefresh(true); }, 80);
 })();
 </script>
+
+
+<!-- CCC V80 PERFORMANCE ONLY PATCH
+Scope: loading/rendering speed only.
+No calculation logic changed. No B Item API logic changed. No SQL/DB/Selenium changes.
+-->
