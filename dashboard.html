@@ -8034,390 +8034,9 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 </script>
 
 <!-- === FINAL V16 B ITEM D1 CALCULATION FIX - SINGLE LOGIC PATCH / NO LAYOUT CHANGES === -->
-<script id="final-v16-bitem-d1-calculation-fix">
-(function(){
-  if(window.__FINAL_V16_BITEM_D1_CALC_FIX__) return;
-  window.__FINAL_V16_BITEM_D1_CALC_FIX__ = true;
-
-  const originalPunchTotalsForDisplay = window.punchTotalsForDisplay || (typeof punchTotalsForDisplay === 'function' ? punchTotalsForDisplay : null);
-  const originalBItemRawRowsForFiltered = window.bItemRawRowsForFiltered || (typeof bItemRawRowsForFiltered === 'function' ? bItemRawRowsForFiltered : null);
-  const originalIsBPunchCleared = window.isBPunchCleared || (typeof isBPunchCleared === 'function' ? isBPunchCleared : null);
-  const originalIsReturnBPunchCleared = window.isReturnBPunchCleared || (typeof isReturnBPunchCleared === 'function' ? isReturnBPunchCleared : null);
-  const originalRenderStagesControl = window.renderStagesControl || (typeof renderStagesControl === 'function' ? renderStagesControl : null);
-  const originalRefresh = window.refresh || (typeof refresh === 'function' ? refresh : null);
-
-  function C(v){return (v===null||v===undefined||v==='(blank)')?'':String(v).replace(/\s+/g,' ').trim();}
-  function U(v){return C(v).toUpperCase();}
-  function parseJson(v){try{return v?JSON.parse(v):{};}catch(e){return {};}}
-  function rowGet(row,names){
-    if(!row)return '';
-    try{if(typeof rowValue==='function')return rowValue(row,names)||'';}catch(e){}
-    const keys=Object.keys(row||{}), nk=x=>C(x).toUpperCase().replace(/[^A-Z0-9]/g,'');
-    for(const n of names){if(row[n]!==undefined&&row[n]!==null&&C(row[n])!=='')return row[n];}
-    for(const n of names){const nn=nk(n);const k=keys.find(x=>nk(x)===nn);if(k&&row[k]!==undefined&&row[k]!==null&&C(row[k])!=='')return row[k];}
-    return '';
-  }
-  function tpOf(row){return C(row&&(row.__d1_tp||row.tp_no||row['TP NUMBER']||row['TP Number']||row.TestPackNo||row['TestPack No']||row['Test Pack No']||row['TP No']))||C(rowGet(row,['TP NUMBER','TP No','TP Number','TestPackNo','Test Pack No','TestPack No']));}
-  function stageOf(row){return C(row&&(row.__d1_stage||row.construction_stage||row['Construction Stage']||row.Stage))||C(rowGet(row,['Construction Stage','Stage','Current Stage']));}
-  function areaOf(row){return C(row&&(row.__d1_area||row.area||row.Area||row.AREA||row['Drawing Areas']))||C(rowGet(row,['Area','AREA','Drawing Areas']));}
-  function matOf(row){try{if(typeof bPunchMaterialType==='function')return bPunchMaterialType(row);}catch(e){} return C(row&&(row.__d1_material_type||row.material_type||row['Material TYPE']||row['Material Type']))||C(rowGet(row,['Material TYPE','Material Type','Punch Item Type']))||'Other';}
-  function partyOf(row){try{if(typeof bPunchActionParty==='function')return bPunchActionParty(row);}catch(e){} const t=U(row&&(row.Comments||row.Comment||row.__d1_comment));return (t.includes('ENG')||t.includes('ENGINEER'))?'ENG':'CNS';}
-  function arr(v){try{if(typeof toMulti==='function')return toMulti(v);}catch(e){} return Array.isArray(v)?(v.length?v:['ALL']):(!C(v)||U(v)==='ALL'?['ALL']:[C(v)]);}
-  function isAll(v){return Array.isArray(v)?(!v.length||v.map(U).includes('ALL')):(!C(v)||U(v)==='ALL');}
-  function tpMapAll(){const m={};(Array.isArray(window.TP)?window.TP:[]).forEach(r=>{const tp=C(r&&r.tp);if(tp)m[U(tp)]=r;});return m;}
-  function filteredTpSet(data){const s=new Set();(Array.isArray(data)?data:(Array.isArray(window.TP)?window.TP:[])).forEach(r=>{const tp=C(r&&r.tp);if(tp)s.add(U(tp));});return s;}
-  function rowAreas(row){const raw=areaOf(row);try{return (typeof normalizeAreas==='function'?normalizeAreas(raw):[raw]).map(x=>U(x)).filter(Boolean);}catch(e){return raw?[U(raw)]:[];}}
-  function passesArea(row){
-    const areaVals=arr(window.F&&window.F.area).map(U), grpVals=arr(window.F&&window.F.areaGrp).map(U);
-    if(isAll(areaVals)&&isAll(grpVals))return true;
-    const areas=rowAreas(row); if(!areas.length)return false;
-    if(!isAll(grpVals)){const ok=areas.some(a=>grpVals.includes(U(typeof areaGroupOf==='function'?areaGroupOf(a):a.charAt(0)))); if(!ok)return false;}
-    if(!isAll(areaVals)&&!areas.some(a=>areaVals.includes(a)))return false;
-    return true;
-  }
-  function contractorFromTpInfo(info){const con=U(info&&(info.con||info.contractor||info['CCC / JGC Direct MP']));return con==='CCC'?'CCC':'JGC Direct MP';}
-  function d1RowsRaw(){const api=window.bitemSystemAPI||{};return (Array.isArray(api.stateRows)?api.stateRows:[]).filter(r=>Number((r&&r.active)!==undefined?r.active:1)!==0);}
-  function d1ToLegacy(r){
-    const raw=parseJson(r&&r.row_json); const out=Object.assign({},raw);
-    out.__d1=true; out.__d1_tp=C(r&&r.tp_no); out.__d1_stage=C(r&&r.construction_stage); out.__d1_final_status=C(r&&r.final_status);
-    out.__d1_final_cleared_date=C(r&&r.final_cleared_date); out.__d1_user_cleared_date=C(r&&r.user_cleared_date); out.__d1_query_cleared_date=C(r&&r.query_cleared_date);
-    out.__d1_material_type=C(r&&r.material_type); out.__d1_punch_category=C(r&&r.punch_category)||'B'; out.__d1_area=C(r&&r.area); out.__d1_comment=C(r&&r.comment_text);
-    out['TP NUMBER']=out.__d1_tp||C(out['TP NUMBER'])||C(out.TestPackNo)||C(out['TP No']);
-    out['Construction Stage']=out.__d1_stage||C(out['Construction Stage'])||C(out.Stage);
-    out['Punch Category\n(A/B/C)']=out.__d1_punch_category||C(out['Punch Category\n(A/B/C)'])||C(out['Punch Category (A/B/C)'])||C(out['Punch Category'])||'B';
-    out['Material TYPE']=out.__d1_material_type||C(out['Material TYPE'])||C(out['Material Type']); out['Comments']=out.__d1_comment||C(out.Comments)||C(out.Comment); out['Area']=out.__d1_area||C(out.Area);
-    if(out.__d1_query_cleared_date)out['Punch Cleared']=out.__d1_query_cleared_date;
-    return out;
-  }
-  function isBRow(row){if(row&&row.__d1)return U(row.__d1_punch_category||'B')==='B';try{return typeof punchCategoryFromRow==='function'?punchCategoryFromRow(row)==='B':U(rowGet(row,['Punch Category\n(A/B/C)','Punch Category (A/B/C)','Punch Category']))==='B';}catch(e){return U(rowGet(row,['Punch Category\n(A/B/C)','Punch Category (A/B/C)','Punch Category']))==='B';}}
-  function isStageCnsB(row){const s=U(stageOf(row));return s.includes('QC PRETESTPACK PUNCH LIST')||s.includes('RETURN FOR REINSTATEMENT')||s.includes('RETURN WITH BACK PUNCH')||s.includes('SAPID PUNCH LIST');}
-  function isStageReturnB(row){return U(stageOf(row)).includes('QC PUNCH LIST RETURN');}
-  function isCleared(row){if(row&&row.__d1){if(U(row.__d1_final_status)==='CLEARED')return true; if(C(row.__d1_final_cleared_date)||C(row.__d1_user_cleared_date))return true; return false;} try{return originalIsBPunchCleared?originalIsBPunchCleared(row,{}):!!C(rowGet(row,['Punch Cleared','Punched Cleared','Punch Clear Date','Cleared Date']));}catch(e){return !!C(rowGet(row,['Punch Cleared','Punched Cleared','Punch Clear Date','Cleared Date']));}}
-  function filteredBRowsForCurrent(data){
-    const d1=d1RowsRaw(); let source=d1.length?d1.map(d1ToLegacy):(originalBItemRawRowsForFiltered?(originalBItemRawRowsForFiltered(data).rows||[]):(Array.isArray(window.B_ITEM_ROWS)?window.B_ITEM_ROWS:[]));
-    const allTp=tpMapAll(), tps=filteredTpSet(data), conFilter=C(window.F&&window.F.con); const rows=[], tpLookup={};
-    source.forEach(row=>{
-      if(!isBRow(row))return; const tp=U(tpOf(row)); const info=allTp[tp]||null;
-      if(tp&&allTp[tp]){if(tps.size&&!tps.has(tp))return;} else if(conFilter==='CCC') return;
-      const derived=info?contractorFromTpInfo(info):'JGC Direct MP';
-      if(conFilter==='CCC'&&derived!=='CCC')return; if(conFilter==='JGC Direct MP'&&derived!=='JGC Direct MP')return;
-      if(!passesArea(row))return; rows.push(row); if(info&&tp)tpLookup[tpOf(row)]=info;
-    });
-    return {rows,tpLookup,fromD1:!!d1.length};
-  }
-  function allBTotals(data){const src=filteredBRowsForCurrent(data); const b={total:0,cleared:0}; src.rows.forEach(r=>{b.total++; if(isCleared(r))b.cleared++;}); return b;}
-  function stageBTotals(data){const src=filteredBRowsForCurrent(data); const cns={total:0,cleared:0}, ret={total:0,cleared:0}, rows=[]; src.rows.forEach(r=>{if(isStageCnsB(r)){cns.total++; if(isCleared(r))cns.cleared++; rows.push(r);} else if(isStageReturnB(r)){ret.total++; if(isCleared(r))ret.cleared++; rows.push(r);}}); return {cns,ret,rows};}
-
-  window.bItemRawRowsForFiltered=function(data){return filteredBRowsForCurrent(data);}; try{bItemRawRowsForFiltered=window.bItemRawRowsForFiltered;}catch(e){}
-  window.isBPunchCleared=function(row,tpInfo){return isCleared(row);}; try{isBPunchCleared=window.isBPunchCleared;}catch(e){}
-  window.isReturnBPunchCleared=function(row,tpInfo){return isCleared(row);}; try{isReturnBPunchCleared=window.isReturnBPunchCleared;}catch(e){}
-  window.punchTotalsForDisplay=function(data){const base=originalPunchTotalsForDisplay?originalPunchTotalsForDisplay(data):(typeof punchTotals==='function'?punchTotals(data):{A:{total:0,cleared:0},B:{total:0,cleared:0},C:{total:0,cleared:0}}); return {A:base.A||{total:0,cleared:0},B:allBTotals(data),C:base.C||{total:0,cleared:0}};}; try{punchTotalsForDisplay=window.punchTotalsForDisplay;}catch(e){}
-  window.bPunchControlTotals=function(data){const s=stageBTotals(data); return {cns:s.cns,ret:s.ret};}; try{bPunchControlTotals=window.bPunchControlTotals;}catch(e){}
-
-  function repaintStageControl(){try{if(window.__V46_BITEM_D1_REQUEST_CONTROLLER__||window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__)return; if(window.currentPage!=='stagescontrol')return; const data=typeof getFiltered==='function'?getFiltered():[]; const s=stageBTotals(data); const box=document.getElementById('bPunchControlBoxes'); if(box&&typeof controlPunchBox==='function')box.innerHTML=controlPunchBox('CNS B Punch',s.cns,'var(--orange)')+controlPunchBox('QC Return B Punch',s.ret,'var(--accent2)'); const pEl=document.getElementById('bPunchTypeChart'); if(pEl&&typeof miniHbar==='function')pEl.innerHTML=miniHbar([['CNS',s.rows.filter(r=>partyOf(r)==='CNS').length],['ENG',s.rows.filter(r=>partyOf(r)==='ENG').length]],'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))'); const mEl=document.getElementById('bPunchMatChart'); if(mEl&&typeof miniHbar==='function'&&typeof groupRowsByCount==='function')mEl.innerHTML=miniHbar(groupRowsByCount(s.rows,matOf),'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))');}catch(e){console.warn('[V16] stage repaint failed:',e);}}
-  window.renderStagesControl=function(data){const out=originalRenderStagesControl?originalRenderStagesControl.apply(this,arguments):undefined; setTimeout(repaintStageControl,0); return out;}; try{renderStagesControl=window.renderStagesControl;}catch(e){}
-  async function loadD1ForPunch(){const api=window.bitemSystemAPI||(window.bitemSystemAPI={}); if(Array.isArray(api.stateRows)&&api.stateRows.length)return true; if(location.protocol==='file:'||api.__v16Loading)return false; api.__v16Loading=true; try{const headers={'content-type':'application/json'}; try{const t=localStorage.getItem('ccc_bitem_auth_token')||''; if(t)headers.authorization='Bearer '+t;}catch(e){} const res=await fetch('/api/bitem/state?include_removed=1&limit=50000&t='+Date.now(),{headers,cache:'no-store'}); const data=await res.json().catch(()=>({})); if(res.ok&&Array.isArray(data.rows)){api.stateRows=data.rows; api.stateKpi=data.kpi||{}; api.total=Number(data.total||data.rows.length||0); window.__BITEM_D1_FULL_READY=true; return true;}}catch(e){console.warn('[V16] D1 punch load skipped:',e.message||e);}finally{api.__v16Loading=false;} return false;}
-  function rerender(){try{if(typeof refresh==='function')refresh(true);}catch(e){} try{repaintStageControl();}catch(e){}}
-  function boot(){loadD1ForPunch().then(ok=>{if(ok)rerender();});}
-  if(originalRefresh){window.refresh=function(){const out=originalRefresh.apply(this,arguments); setTimeout(()=>{loadD1ForPunch().then(ok=>{if(ok)repaintStageControl();});},0); return out;}; try{refresh=window.refresh;}catch(e){}}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(boot,500)); else setTimeout(boot,500);
-  window.addEventListener('hashchange',()=>setTimeout(boot,500));
-})();
-</script>
 
 
 <!-- === FINAL V21 EXACT REINSTATEMENT FILTER + BITEM CONTROL FIX / NO LAYOUT CHANGE === -->
-<script id="final-v21-exact-reinstatement-filter-bitem-control-fix">
-(function(){
-  if(window.__FINAL_V21_REINST_FILTER_BITEM_FIX__) return;
-  window.__FINAL_V21_REINST_FILTER_BITEM_FIX__=true;
-
-  const REINST_CCC = new Set(["DPCU-FW-TP-033", "599-PC-01-TP-0001", "599-PC-01-TP-0002", "599-PC-01-TP-0003", "599-PC-01-TP-0004", "599-PC-01-TP-0006", "599-PC-01-TP-0007", "599-NT-01-TP-0092", "599-NT-01-TP-0116", "599-OW-01-TP-0220", "599-PC-01-TP-0029", "599-OW-01-TP-0510", "599-OW-01-TP-0521", "599-PC-01-TP-0035", "599-WG-01-TP-0110", "599-WG-01-TP-0107", "599-PC-01-TP-0036", "599-PC-01-TP-0037", "599-PC-01-TP-0040", "599-WG-01-TP-0056", "599-HS-01-TP-0524", "599-NT-01-TP-0533", "599-OW-01-TP-0527", "599-OW-01-TP-0536", "599-OW-01-TP-0537", "599-OW-01-TP-0359", "599-PR-01-TP-0098", "599-OW-01-TP-0129", "599-DG-01-TP-0902", "599-DG-01-TP-0903", "599-DG-01-TP-0905", "599-DG-01-TP-0906", "599-DG-01-TP-0907", "599-DG-01-TP-0923", "599-WG-01-TP-0113", "599-WG-01-TP-0114", "599-WG-01-TP-0115", "599-WG-01-TP-0120", "599-PC-01-TP-0001A", "599-WG-01-TP-0900", "599-PR-01-TP-0922", "599-PR-01-TP-0921", "599-PR-01-TP-0920", "599-PR-01-TP-0919", "599-PR-01-TP-0917", "599-DG-01-TP-0901", "599-WG-01-TP-0913", "599-PR-01-TP-0948", "599-PR-01-TP-0960", "599-PR-01-TP-0954", "599-PR-01-TP-0961", "599-PR-01-TP-0964", "599-FG-01-TP-1034", "599-SC-01-TP-0074", "599-FG-01-TP-1035", "599-DG-01-TP-0401", "599-SC-01-TP-0075", "599-OW-01-TP-1057", "599-OW-01-TP-1197", "599-OW-01-TP-0858", "599-OW-01-TP-0856", "599-OW-01-TP-1373", "599-OW-01-TP-1355", "599-OW-01-TP-0506", "599-OW-01-TP-0322", "599-FG-01-TP-0349", "599-NT-01-TP-0326", "599-OW-01-TP-0362", "599-WG-01-TP-0400", "599-OW-01-TP-0296", "599-OW-01-TP-0295", "599-OW-01-TP-0292", "599-OW-01-TP-0297", "599-PR-01-TP-1183", "599-PR-01-TP-1202", "599-WG-01-TP-1091", "599-DG-01-TP-0275", "DPCU-FW-TP-088", "599-NT-01-TP-1175", "599-PR-01-TP-0869", "599-NT-01-TP-1173", "599-PR-01-TP-1162", "599-FG-01-TP-1242", "599-DG-01-TP-1111", "599-PR-01-TP-0975", "599-NT-01-TP-1174", "599-PC-01-TP-0054", "599-WG-01-TP-1096", "599-WG-01-TP-1498", "599-WG-01-TP-0122", "599-WG-01-TP-1094", "599-PR-01-TP-1214", "599-PR-01-TP-1146", "599-WG-01-TP-1093", "599-PC-01-TP-1359", "599-PC-01-TP-1360", "599-DG-01-TP-0403", "599-OW-01-TP-0364", "599-PC-01-TP-1358", "599-WG-01-TP-1095", "599-PC-01-TP-1361", "599-PC-01-TP-1363", "599-PR-01-TP-1145", "599-PR-01-TP-1365", "599-DG-01-TP-1113", "599-DG-01-TP-1102", "599-PR-01-TP-1185", "599-PR-01-TP-1217", "599-PR-01-TP-1218", "599-OW-01-TP-0577", "599-PR-01-TP-0949", "599-UA-01-TP-1237", "599-IA-01-TP-1059", "599-IA-01-TP-1060", "599-IA-01-TP-1061", "599-IA-01-TP-1062", "599-IA-01-TP-1063", "599-IA-01-TP-1064", "599-IA-01-TP-1066", "599-IA-01-TP-1070", "599-IA-01-TP-1065", "599-IA-01-TP-1067", "599-IA-01-TP-1068", "599-FW-02-TP-1444", "599-FW-02-TP-1441", "599-FW-02-TP-1442", "599-FW-02-TP-1443", "599-FG-01-TP-0350", "599-DG-01-TP-1114", "599-DG-01-TP-0874", "599-DG-01-TP-1110", "599-DG-01-TP-0601", "599-WG-01-TP-0103", "599-WG-01-TP-0105", "599-WG-01-TP-0099", "599-WG-01-TP-0100", "599-WG-01-TP-0101", "599-WG-01-TP-0121", "599-WG-01-TP-0371", "599-WG-01-TP-0898", "599-WG-01-TP-0899", "599-WG-01-TP-1530", "599-DG-01-TP-1109", "599-DG-01-TP-1117", "599-DG-01-TP-1126", "599-DG-01-TP-1528", "599-OW-01-TP-1054", "599-OW-01-TP-1056", "599-OW-01-TP-0365", "599-OW-01-TP-0502", "599-OW-01-TP-0504", "599-OW-01-TP-0518", "599-OW-01-TP-0519", "599-OW-01-TP-0529", "599-HS-01-TP-1189", "599-SC-01-TP-0130", "599-SC-01-TP-0207", "599-SC-01-TP-0209", "599-SC-01-TP-0245", "599-SC-01-TP-0246", "599-SC-01-TP-0834", "599-SC-01-TP-0837", "599-SC-01-TP-0243", "599-SC-01-TP-0244", "599-SC-01-TP-0257", "599-SC-01-TP-0073", "599-PR-01-TP-0165", "599-PR-01-TP-0168", "599-PR-01-TP-1216", "599-PR-01-TP-1148", "599-PR-01-TP-1176", "599-PR-01-TP-0167", "599-PR-01-TP-0171", "599-PR-01-TP-0231", "599-PR-01-TP-0234", "599-PR-01-TP-0278", "599-PR-01-TP-0284", "599-PR-01-TP-0288", "599-PR-01-TP-0409", "599-PR-01-TP-0410", "599-PR-01-TP-0411", "599-PR-01-TP-0412", "599-PR-01-TP-0413", "599-PR-01-TP-0414", "599-PR-01-TP-0873", "599-PR-01-TP-0974", "599-PR-01-TP-1122", "599-PR-01-TP-0866", "599-PR-01-TP-0868", "599-PR-01-TP-1143", "599-PR-01-TP-1178", "599-WG-01-TP-1235", "599-WG-01-TP-1354", "599-DG-01-TP-0294", "599-PC-01-TP-1523", "599-PC-01-TP-1531", "599-RL-02-TP-0236", "599-FG-01-TP-1232", "599-FG-01-TP-1233", "599-FG-01-TP-1234", "599-PC-01-TP-0301", "599-PC-01-TP-0302", "599-PC-01-TP-1131", "599-PC-01-TP-1132", "599-DG-01-TP-1537", "599-PC-01-TP-1548", "599-PC-01-TP-0307", "599-PC-01-TP-0308", "599-PC-01-TP-1135", "599-OW-01-TP-1254", "599-FG-01-TP-1243", "599-FG-01-TP-0814", "599-FG-01-TP-0872", "599-FG-01-TP-0343", "599-FG-01-TP-0341", "599-FG-01-TP-0342", "599-FG-01-TP-1033", "599-FG-01-TP-1375", "599-WG-01-TP-0128", "599-WG-01-TP-0132", "599-WG-01-TP-0133", "599-PC-01-TP-1088", "599-RL-02-TP-0221", "599-HS-01-TP-1187", "599-HS-01-TP-1193", "599-HS-01-TP-1206", "599-WG-01-TP-0273", "599-NT-01-TP-0323", "599-NT-01-TP-0840", "599-NT-01-TP-1352", "599-NT-01-TP-0156", "599-NT-01-TP-0331", "599-NT-01-TP-0340", "599-NT-01-TP-1099", "599-NT-01-TP-0269", "599-NT-01-TP-0271", "599-NT-01-TP-0293", "599-NT-01-TP-0418", "599-NT-01-TP-0419", "599-NT-01-TP-1104", "599-NT-01-TP-1105", "599-NT-01-TP-1118", "599-NT-01-TP-0330", "599-NT-01-TP-1180", "599-WG-01-TP-0089", "599-WG-01-TP-0117", "599-WG-01-TP-0914", "599-WG-01-TP-1532", "599-DG-01-TP-1124", "599-DG-01-TP-1127", "599-DG-01-TP-1533", "599-WG-01-TP-0051", "599-DG-01-TP-1112", "599-PC-01-TP-1529", "599-PC-01-TP-1543", "599-PC-01-TP-0318", "599-PC-01-TP-1128", "599-PC-01-TP-0320", "599-OW-01-TP-0579", "599-OW-01-TP-0578", "599-SO-01-TP-0772", "599-PR-01-TP-0953", "599-PR-01-TP-0965", "599-PR-01-TP-0966", "599-PR-01-TP-1181", "599-PR-01-TP-1182", "599-PR-01-TP-1186", "599-PR-01-TP-1201", "599-PR-01-TP-1203", "599-PR-01-TP-1204", "599-PR-01-TP-1205", "599-IA-01-TP-1073", "599-FW-02-TP-1438", "599-FW-02-TP-1439", "599-FW-02-TP-1440", "599-FW-02-TP-1410", "599-FW-02-TP-1411", "599-FW-02-TP-1412", "599-FW-02-TP-1413", "599-FW-02-TP-1414", "599-FW-02-TP-1415", "599-FW-02-TP-1416", "599-FW-02-TP-1417", "599-FW-02-TP-1418", "599-FW-02-TP-1419", "599-FW-02-TP-1420", "599-FW-02-TP-1421", "599-FW-02-TP-1422", "599-FW-02-TP-1423", "599-FW-02-TP-1424", "599-FW-02-TP-1425", "599-FW-02-TP-1426", "599-FW-02-TP-1427", "599-FW-02-TP-1428", "599-FW-02-TP-1429", "599-FW-02-TP-1430", "599-FW-02-TP-1431", "599-FW-02-TP-1432", "599-FW-02-TP-1433", "599-FW-02-TP-1434", "599-FW-02-TP-1435", "599-FW-02-TP-1436", "599-FW-02-TP-1437", "599-OW-01-TP-0111", "599-HS-01-TP-1188", "599-HS-01-TP-1207", "599-WG-01-TP-1090", "599-PC-01-TP-1362", "599-PR-01-TP-0867", "599-PR-01-TP-1147", "DPCU-FW-TP-087", "DPCU-FW-TP-09", "DPCU-FW-TP-014", "DPCU-FW-TP-016", "DPCU-FW-TP-023", "DPCU-FW-TP-027", "DPCU-FW-TP-028", "DPCU-FW-TP-032", "DPCU-FW-TP-034", "DPCU-FW-TP-035", "DPCU-FW-TP-036", "DPCU-FW-TP-037", "DPCU-FW-TP-04", "DPCU-FW-TP-040", "DPCU-FW-TP-041", "DPCU-FW-TP-042", "DPCU-FW-TP-049", "DPCU-FW-TP-054", "DPCU-FW-TP-061", "DPCU-FW-TP-065", "DPCU-FW-TP-066", "DPCU-FW-TP-070", "DPCU-FW-TP-071", "DPCU-FW-TP-072", "DPCU-FW-TP-073", "DPCU-FW-TP-074", "DPCU-FW-TP-075", "DPCU-FW-TP-077", "DPCU-FW-TP-078", "DPCU-FW-TP-082", "DPCU-FW-TP-083", "DPCU-FW-TP-084", "DPCU-FW-TP-085", "DPCU-FW-TP-017", "DPCU-FW-TP-018", "DPCU-FW-TP-022", "DPCU-FW-TP-024", "DPCU-FW-TP-038", "DPCU-FW-TP-039", "DPCU-FW-TP-050", "DPCU-FW-TP-051", "DPCU-FW-TP-059", "DPCU-FW-TP-060", "DPCU-FW-TP-062", "DPCU-FW-TP-064", "DPCU-FW-TP-076", "DPCU-FW-TP-080", "DPCU-FW-TP-081", "DPCU-FW-TP-015", "DPCU-FW-TP-019", "DPCU-FW-TP-020", "DPCU-FW-TP-021", "DPCU-FW-TP-025", "DPCU-FW-TP-026", "DPCU-FW-TP-029", "DPCU-FW-TP-031", "DPCU-FW-TP-043", "DPCU-FW-TP-045", "DPCU-FW-TP-046", "DPCU-FW-TP-047", "DPCU-FW-TP-048", "DPCU-FW-TP-052", "DPCU-FW-TP-055", "DPCU-FW-TP-056", "DPCU-FW-TP-057", "DPCU-FW-TP-058", "DPCU-FW-TP-079", "DPCU-FW-TP-086", "599-PC-01-TP-1129", "599-PC-01-TP-1133", "599-PC-01-TP-0303", "599-IA-01-TP-1073K", "599-IA-01-TP-1073L", "599-IA-01-TP-1073S", "599-IA-01-TP-1073T", "599-IA-01-TP-1073U", "599-IA-01-TP-1073M", "599-IA-01-TP-1073B", "599-IA-01-TP-1073A", "599-IA-01-TP-1073E", "599-IA-01-TP-1073V", "599-IA-01-TP-1073F", "599-IA-01-TP-1073G", "599-IA-01-TP-1073I", "599-IA-01-TP-1073J", "599-IA-01-TP-1073Q", "599-IA-01-TP-1073H", "599-IA-01-TP-1073R", "599-IA-01-TP-1073N", "599-IA-01-TP-1073D", "599-IA-01-TP-1073O", "599-IA-01-TP-1073P", "599-IA-01-TP-1073C", "599-FW-02-TP-1696", "599-FW-02-TP-1697", "599-FW-02-TP-1698", "599-FW-02-TP-1699", "599-FW-02-TP-1700", "599-IA-01-TP-1073W", "599-PR-01-TP-1716", "599-PR-01-TP-1724", "599-RL-02-TP-0236A", "599-SC-01-TP-0251A", "599-WG-01-TP-1731", "599-NT-01-TP-0156A", "599-PR-01-TP-1143A", "599-RL-02-TP-1735", "599-WG-01-TP-0100A", "599-WG-01-TP-0100B", "599-WG-01-TP-0100C", "599-DG-01-TP-1109A", "599-DG-01-TP-1109B", "599-DG-01-TP-1109C", "599-DG-01-TP-1109D", "599-PR-01-TP-0869A", "599-UA-01-TP-1237A", "599-WG-01-TP-0104A", "599-NT-01-TP-1736", "599-PR-01-TP-1146R1"].map(x=>String(x||'').trim().toUpperCase()).filter(Boolean));
-
-  const oldPunchTotalsForDisplay = (typeof punchTotalsForDisplay==='function') ? punchTotalsForDisplay : window.punchTotalsForDisplay;
-  const oldRenderStagesControl = (typeof renderStagesControl==='function') ? renderStagesControl : window.renderStagesControl;
-  const oldRefresh = (typeof refresh==='function') ? refresh : window.refresh;
-  const oldSetF = (typeof setF==='function') ? setF : window.setF;
-  const oldResetFilters = (typeof resetFilters==='function') ? resetFilters : window.resetFilters;
-
-  function C(v){return (v===null||v===undefined||v==='(blank)')?'':String(v).replace(/\s+/g,' ').trim();}
-  function U(v){return C(v).toUpperCase();}
-  function esc(v){return C(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-  function FObj(){try{return F||{};}catch(e){return window.F||{};}}
-  function toArr(v){try{return (typeof toMulti==='function')?toMulti(v):(Array.isArray(v)?v:[v]);}catch(e){return Array.isArray(v)?v:[v];}}
-  function all(v){const a=toArr(v).map(U).filter(Boolean);return !a.length||a.includes('ALL');}
-  function normArr(v){return toArr(v).map(U).filter(Boolean);}
-  function rowGet(row,names){
-    if(!row)return '';
-    try{if(typeof rowValue==='function'){const x=rowValue(row,names); if(C(x))return x;}}catch(e){}
-    const keys=Object.keys(row||{}), nk=x=>U(x).replace(/[^A-Z0-9]/g,'');
-    for(const n of names){if(row[n]!==undefined&&C(row[n]))return row[n];}
-    for(const n of names){const nn=nk(n); const k=keys.find(x=>nk(x)===nn); if(k&&C(row[k]))return row[k];}
-    return '';
-  }
-  function tpOfRow(r){return C(r&&(r.__d1_tp||r.tp_no||r.tp||r['TP NUMBER']||r['TP Number']||r.TestPackNo||r['Test Pack No']||r['TP No'])) || C(rowGet(r,['TP NUMBER','TP No','TP Number','TestPackNo','Test Pack No','TestPack No']));}
-  function stageOfRow(r){return C(r&&(r.__d1_stage||r.construction_stage||r['Construction Stage']||r.Stage)) || C(rowGet(r,['Construction Stage','Stage','Current Stage','Punch Stage']));}
-  function areaOfRow(r){return C(r&&(r.__d1_area||r.area||r.Area||r.AREA)) || C(rowGet(r,['Area','AREA','Drawing Areas']));}
-  function matOfRow(r){return C(r&&(r.__d1_material_type||r.material_type||r['Material TYPE']||r['Material Type'])) || C(rowGet(r,['Material TYPE','Material Type','Material','Punch Item Type'])) || 'Other';}
-  function commentOfRow(r){return C(r&&(r.__d1_comment||r.comment_text||r.Comments||r.Comment)) || C(rowGet(r,['Comments','Comment','Remarks','Remark']));}
-  function punchCatOfRow(r){return U(r&&(r.__d1_punch_category||r.punch_category)) || U(rowGet(r,['Punch Category\n(A/B/C)','Punch Category (A/B/C)','Punch Category','Category']));}
-  function isBRow(r){const p=punchCatOfRow(r); if(p)return p==='B'; try{return typeof punchCategoryFromRow==='function' ? punchCategoryFromRow(r)==='B' : true;}catch(e){return true;}}
-  function isReinstCCC(tp){return REINST_CCC.has(U(tp));}
-  function reinstContractorOfTp(tp){return isReinstCCC(tp)?'CCC':'JGC Direct MP';}
-  function tpInfoMap(){const m={}; (Array.isArray(window.TP)?window.TP:(typeof TP!=='undefined'?TP:[])).forEach(r=>{const tp=U(r&&r.tp); if(tp)m[tp]=r;}); return m;}
-  function areasOfRow(r){
-    const raw=areaOfRow(r);
-    try{return (typeof normalizeAreas==='function'?normalizeAreas(raw):[raw]).map(U).filter(Boolean);}catch(e){return raw?[U(raw)]:[];}
-  }
-  function areaPassRow(r){
-    const f=FObj(), areaVals=normArr(f.area), grpVals=normArr(f.areaGrp);
-    if(all(f.area)&&all(f.areaGrp))return true;
-    const a=areasOfRow(r); if(!a.length)return false;
-    if(!all(f.areaGrp)){
-      const ok=a.some(x=>{let g=x; try{g=U(areaGroupOf(x));}catch(e){g=U(x.charAt(0));} return grpVals.includes(g);});
-      if(!ok)return false;
-    }
-    if(!all(f.area)&&!a.some(x=>areaVals.includes(x)))return false;
-    return true;
-  }
-  function systemPassTpInfo(info){const f=FObj(); if(all(f.sys))return true; if(!info)return true; return normArr(f.sys).includes(U(info.sys));}
-  function stagePassRowOrTp(r,info){
-    const f=FObj(); if(all(f.stage))return true;
-    const vals=normArr(f.stage); const rs=U(stageOfRow(r));
-    if(rs && vals.some(v=>rs===v||rs.includes(v)))return true;
-    if(info){try{return vals.some(st=>st==='CNS L/C COMPLETED'?hasCnsLC(info):hasStage(info,st));}catch(e){}}
-    return false;
-  }
-  function specialBaseTpData(){
-    const f=FObj(); let oldCon=f.con, out=[];
-    try{ f.con='ALL'; if(typeof FILTER_CACHE!=='undefined')FILTER_CACHE={key:'',data:null}; out=(typeof getFiltered==='function'?getFiltered():((typeof TP!=='undefined'&&Array.isArray(TP))?TP:[])).slice(); }
-    catch(e){ out=((typeof TP!=='undefined'&&Array.isArray(TP))?TP:[]).slice(); }
-    finally{ try{f.con=oldCon; if(typeof FILTER_CACHE!=='undefined')FILTER_CACHE={key:'',data:null};}catch(e){} }
-    const con=C(oldCon);
-    if(con==='CCC')out=out.filter(r=>isReinstCCC(r&&r.tp));
-    else if(con==='JGC Direct MP')out=out.filter(r=>!isReinstCCC(r&&r.tp));
-    return out;
-  }
-  function d1RawRows(){const api=window.bitemSystemAPI||{}; return Array.isArray(api.stateRows)?api.stateRows.filter(r=>Number(r&&r.active!==undefined?r.active:1)!==0):[];}
-  function parseJson(v){try{return v?JSON.parse(v):{};}catch(e){return {};}}
-  function d1ToRow(r){
-    const raw=parseJson(r&&r.row_json); const o=Object.assign({},raw);
-    o.__d1=true; o.__source=r;
-    o.__d1_tp=C(r&&r.tp_no); o.__d1_stage=C(r&&r.construction_stage); o.__d1_area=C(r&&r.area);
-    o.__d1_comment=C(r&&r.comment_text); o.__d1_material_type=C(r&&r.material_type); o.__d1_punch_category=C(r&&r.punch_category)||'B';
-    o.__d1_final_status=C(r&&r.final_status); o.__d1_final_cleared_date=C(r&&r.final_cleared_date); o.__d1_user_cleared_date=C(r&&r.user_cleared_date); o.__d1_query_cleared_date=C(r&&r.query_cleared_date);
-    o['TP NUMBER']=o.__d1_tp||C(o['TP NUMBER'])||C(o.TestPackNo)||C(o['TP No']);
-    o['Construction Stage']=o.__d1_stage||C(o['Construction Stage'])||C(o.Stage);
-    o['Area']=o.__d1_area||C(o.Area); o['Comments']=o.__d1_comment||C(o.Comments)||C(o.Comment);
-    o['Material TYPE']=o.__d1_material_type||C(o['Material TYPE'])||C(o['Material Type']);
-    o['Punch Category\n(A/B/C)']=o.__d1_punch_category||C(o['Punch Category\n(A/B/C)'])||'B';
-    if(o.__d1_query_cleared_date)o['Punch Cleared']=o.__d1_query_cleared_date;
-    return o;
-  }
-  function bItemSourceRows(){
-    const d=d1RawRows();
-    if(d.length)return d.map(d1ToRow);
-    return (Array.isArray(window.B_ITEM_ROWS)?window.B_ITEM_ROWS:(typeof B_ITEM_ROWS!=='undefined'?B_ITEM_ROWS:[])).slice();
-  }
-  function isCleared(r){
-    if(r&&r.__d1){return U(r.__d1_final_status)==='CLEARED'||!!C(r.__d1_final_cleared_date)||!!C(r.__d1_user_cleared_date);}
-    try{if(typeof punchRowHasClearedDate==='function'&&punchRowHasClearedDate(r))return true;}catch(e){}
-    return !!C(rowGet(r,['Punch Cleared','Punched Cleared','Punch Clear Date','Cleared Date']));
-  }
-  function cnsBStage(r){const s=U(stageOfRow(r)); return s.includes('QC PRETESTPACK PUNCH LIST')||s.includes('RETURN FOR REINSTATEMENT')||s.includes('RETURN WITH BACK PUNCH')||s.includes('SAPID PUNCH LIST');}
-  function retBStage(r){return U(stageOfRow(r)).includes('QC PUNCH LIST RETURN');}
-  function actionParty(r){try{return bPunchActionParty(r)==='ENG'?'ENG':'CNS';}catch(e){const t=U(commentOfRow(r)); return (t.includes('ENG')||t.includes('ENGINEER'))?'ENG':'CNS';}}
-  function matType(r){try{return bPunchMaterialType(r)||matOfRow(r);}catch(e){return matOfRow(r)||'Other';}}
-  function rowPassSpecialBItem(r){
-    if(!isBRow(r))return false;
-    const f=FObj(), con=C(f.con), tp=tpOfRow(r), info=tpInfoMap()[U(tp)]||null;
-    if(con==='CCC'&&!isReinstCCC(tp))return false;
-    if(con==='JGC Direct MP'&&isReinstCCC(tp))return false;
-    if(!areaPassRow(r))return false;
-    if(!systemPassTpInfo(info))return false;
-    if(!stagePassRowOrTp(r,info))return false;
-    return true;
-  }
-  const cache={key:'',rows:null,stamp:0};
-  function specialBRows(){
-    const f=FObj(); const src=bItemSourceRows(); const key=JSON.stringify({con:f.con,area:f.area,areaGrp:f.areaGrp,sys:f.sys,stage:f.stage,n:src.length,ready:!!(window.bitemSystemAPI&&window.bitemSystemAPI.stateRows&&window.bitemSystemAPI.stateRows.length)});
-    if(cache.key===key&&cache.rows)return cache.rows;
-    const tpLookup=tpInfoMap();
-    const rows=src.filter(rowPassSpecialBItem);
-    const out={rows,tpLookup,fromD1:!!d1RawRows().length};
-    cache.key=key; cache.rows=out; cache.stamp=Date.now(); return out;
-  }
-  function allBTotals(){const s=specialBRows(); let total=0,cleared=0; s.rows.forEach(r=>{total++; if(isCleared(r))cleared++;}); return {total,cleared};}
-  function stageBTotals(){const s=specialBRows(); const cns={total:0,cleared:0}, ret={total:0,cleared:0}, rows=[]; s.rows.forEach(r=>{if(cnsBStage(r)){cns.total++; if(isCleared(r))cns.cleared++; rows.push(r);} if(retBStage(r)){ret.total++; if(isCleared(r))ret.cleared++; rows.push(r);}}); return {cns,ret,rows};}
-
-  window.bItemRawRowsForFiltered=function(data){return specialBRows();}; try{bItemRawRowsForFiltered=window.bItemRawRowsForFiltered;}catch(e){}
-  window.isBPunchCleared=function(r,tp){return isCleared(r);}; try{isBPunchCleared=window.isBPunchCleared;}catch(e){}
-  window.isReturnBPunchCleared=function(r,tp){return isCleared(r);}; try{isReturnBPunchCleared=window.isReturnBPunchCleared;}catch(e){}
-  window.punchTotalsForDisplay=function(data){
-    const base=oldPunchTotalsForDisplay?oldPunchTotalsForDisplay(data):(typeof punchTotals==='function'?punchTotals(data):{A:{total:0,cleared:0},B:{total:0,cleared:0},C:{total:0,cleared:0}});
-    return {A:base.A||{total:0,cleared:0}, B:allBTotals(), C:base.C||{total:0,cleared:0}};
-  }; try{punchTotalsForDisplay=window.punchTotalsForDisplay;}catch(e){}
-  window.bPunchControlTotals=function(data){const s=stageBTotals(); return {cns:s.cns, ret:s.ret};}; try{bPunchControlTotals=window.bPunchControlTotals;}catch(e){}
-  window.reinstatementPendingRows=function(data){
-    const tpData=specialBaseTpData(); const byTp={}, retByTp={};
-    specialBRows().rows.forEach(r=>{const tp=U(tpOfRow(r)); if(!tp)return; if(cnsBStage(r)){const x=byTp[tp]||(byTp[tp]={total:0,cleared:0,cns:0,eng:0}); x.total++; if(isCleared(r))x.cleared++; if(actionParty(r)==='ENG')x.eng++; else x.cns++;} if(retBStage(r)){const y=retByTp[tp]||(retByTp[tp]={total:0,cleared:0}); y.total++; if(isCleared(r))y.cleared++;} });
-    return tpData.filter(info=>{try{return hasStage(info,'Return for Reinstatement')&&!hasStage(info,'QC Reinstatement Sign');}catch(e){return false;}}).map(info=>{const tp=U(info.tp), b=byTp[tp]||{total:0,cleared:0,cns:0,eng:0}, rb=retByTp[tp]||{total:0,cleared:0}; const cnsBalance=Math.max((b.cns||0)-Math.min((b.cleared||0),(b.cns||0)),0); return {tp:C(info.tp),current:(typeof currentStageOfTp==='function'?currentStageOfTp(info):''),total:b.total,cleared:b.cleared,balance:Math.max(b.total-b.cleared,0),cns:b.cns,eng:b.eng,cnsReady:cnsBalance===0,retTotal:rb.total,retCleared:rb.cleared,retBalance:Math.max(rb.total-rb.cleared,0)};}).sort((a,b)=>b.balance-a.balance||b.retBalance-a.retBalance||b.total-a.total||a.tp.localeCompare(b.tp,undefined,{numeric:true}));
-  }; try{reinstatementPendingRows=window.reinstatementPendingRows;}catch(e){}
-
-  window.renderStagesControl=function(data){
-    const specialData=specialBaseTpData();
-    const out=oldRenderStagesControl?oldRenderStagesControl.call(this,specialData):undefined;
-    setTimeout(()=>{try{
-      if(window.__V46_BITEM_D1_REQUEST_CONTROLLER__||window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__)return;
-      const s=stageBTotals();
-      const box=document.getElementById('bPunchControlBoxes'); if(box&&typeof controlPunchBox==='function')box.innerHTML=controlPunchBox('CNS B Punch',s.cns,'var(--orange)')+controlPunchBox('QC Return B Punch',s.ret,'var(--accent2)');
-      const p=document.getElementById('bPunchTypeChart'); if(p&&typeof miniHbar==='function')p.innerHTML=miniHbar([['CNS',s.rows.filter(r=>actionParty(r)==='CNS').length],['ENG',s.rows.filter(r=>actionParty(r)==='ENG').length]],'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))');
-      const m=document.getElementById('bPunchMatChart'); if(m&&typeof miniHbar==='function'&&typeof groupRowsByCount==='function')m.innerHTML=miniHbar(groupRowsByCount(s.rows,matType),'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))');
-    }catch(e){console.warn('[V21] repaint stage failed',e);}},0);
-    return out;
-  }; try{renderStagesControl=window.renderStagesControl;}catch(e){}
-
-  function displayId(r){
-    const tp=tpOfRow(r); const actual=C(r&&r.__source&&r.__source.bitem_id)||C(r&&r.bitem_id)||C(rowGet(r,['B Item ID','System B Item ID']));
-    const suf=(actual.match(/-C\d+$/i)||['-C001'])[0].toUpperCase();
-    return (isReinstCCC(tp)?'CCC-B-':'JGC-B-')+tp+suf;
-  }
-  function actualId(r){return C(r&&r.__source&&r.__source.bitem_id)||C(r&&r.bitem_id)||displayId(r);}
-  function fingerprint(r){return C(r&&r.__source&&r.__source.fingerprint)||C(r&&r.fingerprint)||'';}
-  function finalStatus(r){return C(r&&r.__source&&r.__source.final_status)||C(r&&r.__d1_final_status)||(isCleared(r)?'CLEARED':'NOT CLEARED');}
-  function finalDate(r){return C(r&&r.__source&&r.__source.final_cleared_date)||C(r&&r.__d1_final_cleared_date)||C(rowGet(r,['Punch Cleared','Cleared Date']));}
-  function queryStatus(r){return C(r&&r.__source&&r.__source.query_status)||C(r&&r.query_status)||'';}
-  function dateOfRow(r){return C(rowGet(r,['Date','DATE']))||C(r&&r.__source&&r.__source.date)||'';}
-  function isoOfRow(r){return C(rowGet(r,['ISO No.','ISO No','ISO','Spool','ISO / Spool']))||'';}
-  function sheetOfRow(r){return C(rowGet(r,['Sheet No.','Sheet No','Sheet','Sheet Number']))||'';}
-  function applySearch(rows){const q=U(document.getElementById('bItemControlSearch')&&document.getElementById('bItemControlSearch').value); if(!q)return rows; return rows.filter(r=>[displayId(r),actualId(r),tpOfRow(r),stageOfRow(r),areaOfRow(r),matOfRow(r),commentOfRow(r),finalStatus(r),queryStatus(r),isoOfRow(r),sheetOfRow(r)].some(x=>U(x).includes(q)));}
-
-  window.__BITEM_COL_FILTERS=window.__BITEM_COL_FILTERS||{};
-  function bitemColValue(r,i){
-    switch(Number(i)){
-      case 1:return displayId(r);
-      case 2:return tpOfRow(r);
-      case 3:return stageOfRow(r);
-      case 4:return dateOfRow(r);
-      case 5:return areaOfRow(r);
-      case 6:return isoOfRow(r);
-      case 7:return sheetOfRow(r);
-      case 8:return punchCatOfRow(r)||'B';
-      case 9:return matOfRow(r);
-      case 10:return commentOfRow(r);
-      case 11:return queryStatus(r);
-      case 12:return finalStatus(r);
-      case 13:return finalDate(r);
-      case 14:return v24UserCleared(r);
-      case 15:return v24Note(r);
-      case 16:return reinstContractorOfTp(tpOfRow(r));
-      default:return '';
-    }
-  }
-  function applyBItemColumnFilters(rows){
-    const filters=window.__BITEM_COL_FILTERS||{};
-    const active=Object.keys(filters).filter(k=>C(filters[k])!=='');
-    if(!active.length)return rows;
-    return rows.filter(r=>active.every(k=>U(bitemColValue(r,k)).includes(U(filters[k]))));
-  }
-  window.setBItemColumnFilter=function(i,v){
-    window.__BITEM_COL_FILTERS=window.__BITEM_COL_FILTERS||{};
-    window.__BITEM_COL_FILTERS[i]=v||'';
-    const el=document.activeElement;
-    window.__BITEM_COL_FOCUS={i:Number(i),pos:el&&typeof el.selectionStart==='number'?el.selectionStart:String(v||'').length};
-    window.__V21_BITEM_PAGE=1;
-    clearTimeout(window.__bitemColFilterTimer);
-    window.__bitemColFilterTimer=setTimeout(()=>window.renderBItemControl(false),160);
-  };
-  window.bitemClearColumnFilters=function(){
-    window.__BITEM_COL_FILTERS={};
-    window.__V21_BITEM_PAGE=1;
-    window.renderBItemControl(false);
-  };
-  function renderBItemFilterCell(h,i,cls){
-    if(i===0)return `<th class="${cls}"><button type="button" class="bitem-filter-reset" onclick="window.bitemClearColumnFilters()">Clear</button></th>`;
-    const val=(window.__BITEM_COL_FILTERS&&window.__BITEM_COL_FILTERS[i])||'';
-    return `<th class="${cls}"><input class="bitem-col-filter" data-bitem-col-filter="${i}" value="${esc(val)}" placeholder="Filter..." title="Filter ${esc(h)}" oninput="window.setBItemColumnFilter(${i},this.value)" onclick="event.stopPropagation()"></th>`;
-  }
-  function restoreBItemFilterFocus(){
-    const f=window.__BITEM_COL_FOCUS; if(!f)return;
-    const el=document.querySelector(`[data-bitem-col-filter="${f.i}"]`);
-    if(el){try{el.focus(); const p=Math.min(f.pos||0,el.value.length); el.setSelectionRange(p,p);}catch(e){}}
-  }
-  function v24StatusText(v){
-    const raw=C(v);
-    const u=U(raw);
-    if(!u||u==='OPEN'||u==='NOT CLEARED') return 'NOT CLEARED';
-    if(u==='CLEARED') return 'CLEARED';
-    return raw;
-  }
-  function v24StatusPill(v){
-    const s=v24StatusText(v), u=U(s);
-    const cls=u==='CLEARED'?'cleared':(u.includes('REMOVED')?'removed':'open');
-    const label=u==='CLEARED'?'✓ CLEARED':s;
-    return `<span class="bitem-status-pill ${cls}">${esc(label)}</span>`;
-  }
-  function v24Note(r){
-    const src=(r&&r.__source)||r||{};
-    const n=C(src.sync_note)||C(src.source_flag)||C(rowGet(r,['Note','NOTES','Sync Note','Source Flag']));
-    const u=U(n);
-    if(u.includes('STAGE_CLOSED')||u.includes('CLOSURE OF THE CURRENT CONSTRUCTION STAGE')) return 'Closed due to the closure of the current construction stage.';
-    if(u.includes('REMOVED_FROM_EXCEL')||u.includes('REMOVED')) return 'This comment did not return in the latest FMS / CCC Excel source.';
-    return n;
-  }
-  function v24UserCleared(r){return C(r&&r.__source&&r.__source.user_cleared_date)||C(r&&r.__d1_user_cleared_date)||C(r&&r.user_cleared_date);}
-  function v24EnsureBItemTools(){
-    try{
-      const tools=document.querySelector('#bItemControlPage .bitem-tools'); if(!tools)return;
-      if(!document.getElementById('bItemReloadBtnV24')){
-        const btn=document.createElement('button'); btn.className='action-btn'; btn.type='button'; btn.id='bItemReloadBtnV24'; btn.textContent='↻ Reload B Item'; btn.onclick=function(){ if(window.bitemReloadState) window.bitemReloadState(); else if(window.renderBItemControl) window.renderBItemControl(true); };
-        const search=document.getElementById('bItemControlSearch'); if(search&&search.nextSibling) tools.insertBefore(btn,search.nextSibling); else tools.appendChild(btn);
-      }
-      let exp=[...tools.querySelectorAll('button')].find(b=>/Export B Item/i.test(b.textContent||''));
-      if(!exp){
-        exp=document.createElement('button'); exp.className='action-btn'; exp.type='button'; exp.textContent='📤 Export B Item'; exp.onclick=function(){ if(window.exportBItemControlTable) window.exportBItemControlTable(); };
-        const dash=[...tools.querySelectorAll('button')].find(b=>/Dashboard/i.test(b.textContent||'')); if(dash)tools.insertBefore(exp,dash); else tools.appendChild(exp);
-      }
-    }catch(e){}
-  }
-  window.__V21_BITEM_PAGE=window.__V21_BITEM_PAGE||1;
-  window.renderBItemControl=function(resetPage){
-    v24EnsureBItemTools();
-    const head=document.getElementById('bItemControlHead'), body=document.getElementById('bItemControlBody'), info=document.getElementById('bItemControlPageInfo'), count=document.getElementById('bItemControlCount');
-    if(!head||!body)return;
-    if(resetPage)window.__V21_BITEM_PAGE=1;
-    const headers=['ACTION','B ITEM ID','TP NUMBER','STAGE','DATE','AREA','ISO NO.','SHEET NO.','PUNCH CATEGORY','MATERIAL TYPE','COMMENT','FMS / CCC Excel Status','FINAL STATUS','Punch Cleared Date','USER CLEARED','NOTE','SCOPE'];
-    const classOf=(i)=>({0:'bitem-action-col',1:'bitem-id-col',10:'bitem-comment-col',11:'bitem-status-col',12:'bitem-status-col',13:'bitem-cleared-col',14:'bitem-cleared-col',15:'bitem-note-col'}[i]||'');
-    head.innerHTML='<tr>'+headers.map((h,i)=>`<th class="${classOf(i)}">${esc(h)}</th>`).join('')+'</tr>'+
-      '<tr class="bitem-filter-row">'+headers.map((h,i)=>renderBItemFilterCell(h,i,classOf(i))).join('')+'</tr>';
-    let rows=applyBItemColumnFilters(applySearch(specialBRows().rows.slice()));
-    rows.sort((a,b)=>tpOfRow(a).localeCompare(tpOfRow(b),undefined,{numeric:true})||displayId(a).localeCompare(displayId(b),undefined,{numeric:true}));
-    const sel=document.getElementById('bItemControlPageSize'); const size=Math.max(25,Number(sel&&sel.value)||100); const pages=Math.max(1,Math.ceil(rows.length/size)); if(window.__V21_BITEM_PAGE>pages)window.__V21_BITEM_PAGE=pages; const start=(window.__V21_BITEM_PAGE-1)*size; const page=rows.slice(start,start+size);
-    body.innerHTML=page.map(r=>{const id=actualId(r), fp=fingerprint(r), old=finalDate(r), note=v24Note(r); const eid=encodeURIComponent(id), efp=encodeURIComponent(fp), eold=encodeURIComponent(old); const btn=`<button class="bitem-edit-btn" type="button" onclick="window.bitemStartSystemClearedEdit&&window.bitemStartSystemClearedEdit('${eid}','${efp}','${eold}')">✏️ Edit</button>`; return `<tr>
-      <td class="bitem-action-col">${btn}</td><td class="bitem-id-col" title="Actual ID: ${esc(id)}">${esc(displayId(r))}</td><td>${esc(tpOfRow(r))}</td><td>${esc(stageOfRow(r))}</td><td>${esc(dateOfRow(r))}</td><td>${esc(areaOfRow(r))}</td><td>${esc(isoOfRow(r))}</td><td>${esc(sheetOfRow(r))}</td><td>${esc(punchCatOfRow(r)||'B')}</td><td>${esc(matOfRow(r))}</td><td class="bitem-comment-cell" title="${esc(commentOfRow(r))}">${esc(commentOfRow(r))}</td><td class="bitem-status-col">${v24StatusPill(queryStatus(r))}</td><td class="bitem-status-col">${v24StatusPill(finalStatus(r))}</td><td class="bitem-cleared-cell bitem-cleared-col" data-bitem-system-cleared="${esc(id)}" onclick="window.bitemStartSystemClearedEdit&&window.bitemStartSystemClearedEdit('${eid}','${efp}','${eold}')">${esc(finalDate(r))}</td><td class="bitem-cleared-col">${esc(v24UserCleared(r))}</td><td class="bitem-note-cell bitem-note-col" title="${esc(note)}">${esc(note)}</td><td>${esc(reinstContractorOfTp(tpOfRow(r)))}</td>
-    </tr>`;}).join('') || '<tr><td colspan="17" class="stage-note">No B Item rows for current filters.</td></tr>';
-    if(info)info.textContent=`Page ${window.__V21_BITEM_PAGE} / ${pages}`;
-    if(count)count.textContent=`B Item Rows: ${rows.length.toLocaleString()}`;
-    setTimeout(restoreBItemFilterFocus,0);
-  }; try{renderBItemControl=window.renderBItemControl;}catch(e){}
-  window.bItemPrevPage=function(){window.__V21_BITEM_PAGE=Math.max(1,(window.__V21_BITEM_PAGE||1)-1); window.renderBItemControl(false);};
-  window.bItemNextPage=function(){window.__V21_BITEM_PAGE=(window.__V21_BITEM_PAGE||1)+1; window.renderBItemControl(false);};
-  window.bitemReloadState=function(){window.renderBItemControl(true);};
-  function bitemActive(){const p=document.getElementById('bItemControlPage'); return !!(p&&p.classList.contains('active'));}
-  window.setF=function(k,v,btn){const out=oldSetF?oldSetF(k,v,btn):undefined; setTimeout(()=>{if(bitemActive())window.renderBItemControl(true);},0); return out;}; try{setF=window.setF;}catch(e){}
-  window.resetFilters=function(){const out=oldResetFilters?oldResetFilters():undefined; setTimeout(()=>{if(bitemActive())window.renderBItemControl(true);},0); return out;}; try{resetFilters=window.resetFilters;}catch(e){}
-  if(oldRefresh){window.refresh=function(){const out=oldRefresh.apply(this,arguments); setTimeout(()=>{if(bitemActive())window.renderBItemControl(false);},0); return out;}; try{refresh=window.refresh;}catch(e){}}
-
-  async function ensureRowsOnce(){
-    if(d1RawRows().length)return true;
-    try{const headers={'content-type':'application/json'}; const t=localStorage.getItem('ccc_bitem_auth_token')||''; if(t)headers.authorization='Bearer '+t; const res=await fetch('/api/bitem/state?include_removed=1&limit=50000&t='+Date.now(),{headers,cache:'no-store'}); const txt=await res.text(); let data={}; try{data=JSON.parse(txt);}catch(e){return false;} if(res.ok&&Array.isArray(data.rows)){window.bitemSystemAPI=window.bitemSystemAPI||{}; window.bitemSystemAPI.stateRows=data.rows; window.bitemSystemAPI.stateKpi=data.kpi||{}; cache.key=''; cache.rows=null; return true;} }catch(e){}
-    return false;
-  }
-  function rerenderAll(){try{if(typeof refresh==='function')refresh(true);}catch(e){} if(bitemActive())try{window.renderBItemControl(true);}catch(e){}}
-  setTimeout(()=>ensureRowsOnce().then(ok=>{if(ok)rerenderAll();}),600);
-  window.addEventListener('hashchange',()=>setTimeout(()=>{if(bitemActive()){ensureRowsOnce().then(()=>window.renderBItemControl(true));}},300));
-})();
-</script>
 
 
 
@@ -9072,75 +8691,6 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
 
 
 <!-- === V48 Stage Control B Item Single Owner / No Flicker === -->
-<script id="v48-stage-control-bitem-single-owner">
-(function(){
-  if(window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__) return;
-  window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__ = true;
-  // Light background warm-up for the common contractor filters. It does not render anything by itself.
-  function tokenHeaders(){
-    var h={'Accept':'application/json'};
-    try{var t=localStorage.getItem('ccc_bitem_auth_token')||localStorage.getItem('ccc_auth_token')||localStorage.getItem('cccToken')||''; if(t)h.Authorization='Bearer '+t;}catch(e){}
-    return h;
-  }
-  function warmStage(contractor){
-    try{
-      var p=new URLSearchParams(); p.set('contractor', contractor); p.set('_warm','v48');
-      fetch('/api/bitem/stage-control?'+p.toString(), {headers:tokenHeaders(), cache:'no-store'}).catch(function(){});
-    }catch(e){}
-  }
-  function bootWarm(){
-    setTimeout(function(){ warmStage('ALL'); }, 700);
-    setTimeout(function(){ warmStage('CCC'); }, 1200);
-    setTimeout(function(){ warmStage('JGC Direct MP'); }, 1700);
-  }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', bootWarm); else bootWarm();
-})();
-</script>
-
-<script id="v59-dashboard-bitem-state-firewall">
-/* V59 — Dashboard must never request the heavy B Item table endpoint.
-   B Item Control owns table paging. Dashboard owns only KPI and stage-control aggregates.
-   This prevents /api/bitem/state?limit=50000 from exhausting D1 and breaking B Item/Login JSON responses after navigation. */
-(function(){
-  if (window.__V59_DASHBOARD_BITEM_STATE_FIREWALL__) return;
-  window.__V59_DASHBOARD_BITEM_STATE_FIREWALL__ = true;
-
-  function isDashboard(){
-    try { return /dashboard/i.test(location.pathname + location.hash); } catch(e) { return true; }
-  }
-  function isHeavyBitemStateUrl(u){
-    try {
-      var url = String(u || '');
-      if (!/\/api\/bitem\/state/i.test(url)) return false;
-      return /limit=50000/i.test(url) || /include_removed=1/i.test(url);
-    } catch(e) { return false; }
-  }
-  function jsonResponse(obj){
-    return new Response(JSON.stringify(obj), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'x-v59-bitem-state-firewall': '1' } });
-  }
-
-  // Stop old dashboard overlays from loading the full B Item registry. Final dashboard B numbers come from /api/bitem/kpi and /api/bitem/stage-control only.
-  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
-  if (nativeFetch && !nativeFetch.__v59Wrapped) {
-    var wrapped = function(input, init){
-      var raw = (typeof input === 'string') ? input : (input && input.url) || '';
-      if (isDashboard() && isHeavyBitemStateUrl(raw)) {
-        return Promise.resolve(jsonResponse({ ok: true, rows: [], total: 0, skipped: true, source: 'v59_dashboard_bitem_state_firewall' }));
-      }
-      return nativeFetch(input, init);
-    };
-    wrapped.__v59Wrapped = true;
-    window.fetch = wrapped;
-  }
-
-  // If old inline scripts call these helpers, make them harmless on dashboard pages.
-  window.__V46_BITEM_D1_REQUEST_CONTROLLER__ = true;
-  window.__V48_STAGE_CONTROL_BITEM_SINGLE_OWNER__ = true;
-  window.bitemLoadSystemState = async function(){
-    return { ok: true, rows: [], total: 0, skipped: true, source: 'v59_dashboard_no_full_state' };
-  };
-})();
-</script>
 
 <script id="v72-dashboard-turbo-performance">
 /* V72 Dashboard Turbo Performance
@@ -9666,339 +9216,132 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   setInterval(function(){ var now=dataVer(); if(now!==lastDV){ lastDV=now; clearV74Caches(); overviewDomCache.clear(); } },1200);
 })();
 </script>
+ 
 
-<script id="dashboard-no-heavy-bitem-state-v1">
-(function(){
-  if (window.__DASHBOARD_NO_HEAVY_BITEM_STATE_V1__) return;
-  window.__DASHBOARD_NO_HEAVY_BITEM_STATE_V1__ = true;
-  const nativeFetch = window.fetch ? window.fetch.bind(window) : null;
-  if (!nativeFetch) return;
-  window.fetch = function(input, init){
-    const raw = (typeof input === 'string') ? input : (input && input.url) || '';
-    if (/\/api\/bitem\/state/i.test(raw) && /(?:[?&]limit=50000|[?&]include_removed=1)/i.test(raw)) {
-      return Promise.resolve(new Response(JSON.stringify({ok:true,rows:[],items:[],total:0,skipped:'dashboard_no_heavy_bitem_state'}), {status:200,headers:{'content-type':'application/json'}}));
-    }
-    return nativeFetch(input, init);
-  };
-})();
-</script>
-
-
-<script id="v77-bitem-api-source-lock">
-/* V77 — Correct B Item source lock
-   Important: B Item dashboard numbers come from the same B Item Control backend APIs,
-   not from dashboard_data.js / B_ITEM_ROWS.
-   - Overview / Punch B uses /api/bitem/kpi
-   - Stages Control B boxes/charts use /api/bitem/stage-control
-   - Stale async responses are ignored, and old local renders cannot overwrite the final API values.
+<script id="v79-bitem-api-only-stable-owner">
+/* V79 — B Item dashboard numbers are API-only and must not dance.
+   Correct source: B Item Control backend APIs only.
+   Fixes the remaining every-few-seconds changes by:
+   1) Removing old full-table /api/bitem/state dashboard refresh side effects.
+   2) Making /api/bitem/kpi and /api/bitem/stage-control the only visual writers.
+   3) Blocking stale responses and local TP/B_ITEM renderers from changing B cards.
 */
 (function(){
-  if(window.__V77_BITEM_API_SOURCE_LOCK__) return;
-  window.__V77_BITEM_API_SOURCE_LOCK__ = true;
+  if (window.__V79_BITEM_API_ONLY_STABLE_OWNER__) return;
+  window.__V79_BITEM_API_ONLY_STABLE_OWNER__ = true;
 
-  function C(v){ return v==null?'':String(v).replace(/\s+/g,' ').trim(); }
+  function C(v){ return v == null ? '' : String(v).replace(/\s+/g,' ').trim(); }
   function U(v){ return C(v).toUpperCase(); }
-  function fmt(v){ return Number(v||0).toLocaleString(); }
-  function fmtTotal(v){ v=Number(v||0); return v>=1000 ? (v/1000).toFixed(1)+'K' : v.toLocaleString(); }
-  function pct(c,t){ c=Number(c||0); t=Number(t||0); return t>0 ? Math.round(c/t*100) : 0; }
   function esc(v){ return C(v).replace(/[&<>"']/g,function(ch){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]);}); }
-  function fObj(){ try{return window.F||F||{};}catch(e){return window.F||{};} }
+  function n(v){ v = Number(v || 0); return Number.isFinite(v) ? v : 0; }
+  function fmt(v){ return n(v).toLocaleString(); }
+  function fmtTotal(v){ v=n(v); return v>=1000 ? (v/1000).toFixed(1)+'K' : v.toLocaleString(); }
+  function pct(c,t){ c=n(c); t=n(t); return t>0 ? Math.round(c/t*100) : 0; }
+  function fObj(){ try { return window.F || F || {}; } catch(e){ return window.F || {}; } }
   function arr(v){
-    if(Array.isArray(v)) return v.map(C).filter(Boolean).filter(function(x){return U(x)!=='ALL';});
+    if (Array.isArray(v)) return v.map(C).filter(Boolean).filter(function(x){ return U(x) !== 'ALL'; });
     var s=C(v); return (!s || U(s)==='ALL') ? [] : [s];
   }
   function contractor(){
-    var c=C(fObj().con||'ALL');
-    if(!c || U(c)==='ALL') return 'ALL';
-    if(/JGC/i.test(c)) return 'JGC Direct MP';
-    if(/CCC/i.test(c)) return 'CCC';
+    var c=C(fObj().con || 'ALL');
+    if (!c || U(c)==='ALL') return 'ALL';
+    if (/JGC/i.test(c)) return 'JGC Direct MP';
+    if (/CCC/i.test(c)) return 'CCC';
     return c;
   }
-  function areasForApi(){
+  function areasFromGroupFilters(){
     var f=fObj();
-    var a=arr(f.area);
-    if(a.length) return a;
-    var g=arr(f.areaGrp).map(U);
-    if(!g.length) return [];
-    try{
-      var all=(typeof getAllAreasFromTP==='function'?getAllAreasFromTP():[]).map(C).filter(Boolean);
-      return all.filter(function(x){
-        try{return g.indexOf(U(areaGroupOf(x)))>=0;}catch(e){return g.indexOf(U(x).charAt(0))>=0;}
-      });
-    }catch(e){ return []; }
-  }
-  function params(){
-    var f=fObj();
-    var p=new URLSearchParams();
-    p.set('contractor', contractor());
-    var a=areasForApi(); if(a.length) p.set('area', a.join(','));
-    var st=arr(f.stage); if(st.length) p.set('stage', st.join(','));
-    return p;
-  }
-  function key(){ return params().toString(); }
-  function headers(){
-    var h={'Accept':'application/json'};
-    try{ var t=localStorage.getItem('ccc_bitem_auth_token')||localStorage.getItem('ccc_auth_token')||localStorage.getItem('cccToken')||''; if(t) h.Authorization='Bearer '+t; }catch(e){}
-    return h;
-  }
-  function activePage(){ try{return String(window.currentPage||'');}catch(e){return '';} }
-  function visible(id){ var el=document.getElementById(id); return !!(el && el.offsetParent!==null); }
-  function shouldKpi(){ return visible('punchCards') || visible('punchPageCards') || activePage()==='overview' || activePage()==='punch'; }
-  function shouldStage(){ return visible('bPunchControlBoxes') || activePage()==='stagescontrol'; }
-
-  var apiApplying=false;
-  var kpiCache=new Map(), stageCache=new Map();
-  var kpiSeq=0, stageSeq=0, kpiAbort=null, stageAbort=null, kpiTimer=null, stageTimer=null;
-  var lastKpiKey='', lastStageKey='';
-
-  function punchCardHTML(obj,k,loading){
-    if(loading){
-      return '<div class="punch-box" data-v77-bitem-api="kpi" data-key="'+esc(k)+'" data-loading="1">'+
-        '<div class="punch-cat">Punch B</div><div class="punch-total" style="color:var(--orange)">--</div>'+
-        '<div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source</div>'+
-        '<div class="punch-prog"><div class="punch-prog-fill" style="width:0%;background:var(--orange)"></div></div></div>';
-    }
-    obj=obj&&obj.punchB?obj.punchB:(obj||{});
-    var total=Number(obj.total||0), cleared=Number(obj.cleared||0);
-    var balance=Number(obj.balance); if(!Number.isFinite(balance)) balance=Math.max(total-cleared,0);
-    var pc=pct(cleared,total);
-    return '<div class="punch-box" data-v77-bitem-api="kpi" data-key="'+esc(k)+'" data-total="'+total+'" data-cleared="'+cleared+'" data-balance="'+balance+'">'+
-      '<div class="punch-cat">Punch B</div><div class="punch-total" style="color:var(--orange)">'+fmtTotal(total)+'</div>'+
-      '<div class="punch-sub">Cleared: '+fmt(cleared)+'</div><div class="punch-sub" style="color:var(--red)">Balance: '+fmt(balance)+'</div>'+
-      '<div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:var(--orange)"></div></div>'+
-      '<div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div></div>';
-  }
-  function replacePunchB(id,data,k,loading){
-    var wrap=document.getElementById(id); if(!wrap) return;
-    var cards=[].slice.call(wrap.children||[]);
-    var card=cards.find(function(x){var c=x.querySelector&&x.querySelector('.punch-cat'); return c&&/Punch\s*B/i.test(c.textContent||'');}) || cards[1];
-    if(!card) return;
-    card.outerHTML=punchCardHTML(data,k,loading);
-  }
-  function applyKpi(k,data,loading){
-    if(k!==key()) return;
-    apiApplying=true;
-    replacePunchB('punchCards',data,k,loading);
-    replacePunchB('punchPageCards',data,k,loading);
-    setTimeout(function(){apiApplying=false;},60);
-  }
-  function scheduleKpi(force,delay){ clearTimeout(kpiTimer); kpiTimer=setTimeout(function(){ loadKpi(!!force); }, delay==null?70:delay); }
-  async function loadKpi(force){
-    if(!shouldKpi()) return;
-    var k=key(); lastKpiKey=k;
-    if(!force && kpiCache.has(k)){ applyKpi(k,kpiCache.get(k),false); return; }
-    if(kpiAbort) try{kpiAbort.abort();}catch(e){}
-    kpiAbort=('AbortController' in window)?new AbortController():null;
-    var seq=++kpiSeq;
-    applyKpi(k,kpiCache.get(k)||null,!kpiCache.has(k));
-    var p=new URLSearchParams(k); p.set('_v77',Date.now());
-    try{
-      var r=await fetch('/api/bitem/kpi?'+p.toString(),{headers:headers(),cache:'no-store',signal:kpiAbort?kpiAbort.signal:undefined});
-      var txt=await r.text(); var j; try{j=JSON.parse(txt);}catch(e){throw new Error('kpi non-JSON: '+txt.slice(0,120));}
-      if(!r.ok || j.ok===false) throw new Error(j&&j.error?j.error:('HTTP '+r.status));
-      if(seq!==kpiSeq || k!==key()) return;
-      kpiCache.set(k,j); applyKpi(k,j,false);
-    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V77] B Item KPI API failed:',e&&e.message||e); if(k===key()&&kpiCache.has(k)) applyKpi(k,kpiCache.get(k),false); }
-  }
-
-  function controlBox(title,obj,color,loading){
-    if(loading){ return '<div class="punch-box" data-v77-bitem-api="stage" data-loading="1"><div class="punch-cat">'+title+'</div><div class="punch-total" style="color:'+color+'">--</div><div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source</div><div class="punch-prog"><div class="punch-prog-fill" style="width:0%;background:'+color+'"></div></div></div>'; }
-    obj=obj||{}; var total=Number(obj.total||0), cleared=Number(obj.cleared||0); var balance=Number(obj.balance); if(!Number.isFinite(balance)) balance=Math.max(total-cleared,0); var pc=pct(cleared,total);
-    return '<div class="punch-box" data-v77-bitem-api="stage" data-total="'+total+'" data-cleared="'+cleared+'" data-balance="'+balance+'"><div class="punch-cat">'+title+'</div><div class="punch-total" style="color:'+color+'">'+fmt(total)+'</div><div class="punch-sub">Cleared: '+fmt(cleared)+'</div><div class="punch-sub" style="color:var(--red)">Balance: '+fmt(balance)+'</div><div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:'+color+'"></div></div><div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div></div>';
-  }
-  function miniBars(items,color,loading){
-    if(loading) return '<div class="hbar-row" data-v77-bitem-api="stage"><div class="hbar-lbl">Loading...</div><div class="hbar-wrap"><div class="hbar-fill" style="width:2%;background:'+color+'"><span class="hbar-cnt outside">--</span></div></div></div>';
-    items=Array.isArray(items)?items:[]; var mx=Math.max.apply(null,items.map(function(x){return Number(x[1]||0);}).concat([1]));
-    return items.map(function(x){ var label=C(x[0])||'Other', val=Number(x[1]||0), w=val>0?Math.max(2,val/mx*100):0; return '<div class="hbar-row" data-v77-bitem-api="stage"><div class="hbar-lbl">'+esc(label)+'</div><div class="hbar-wrap"><div class="hbar-fill" style="width:'+w+'%;background:'+color+'"><span class="hbar-cnt '+(val/mx<.18?'outside':'')+'">'+fmt(val)+'</span></div></div></div>'; }).join('');
-  }
-  function retObj(data){ return data && (data.ret || data.return_b || data.qc_return || data.qcReturn) || {}; }
-  function applyStage(k,data,loading){
-    if(k!==key() || !shouldStage()) return;
-    apiApplying=true;
-    var box=document.getElementById('bPunchControlBoxes');
-    if(box) box.innerHTML=controlBox('CNS B Punch',data&&data.cns||{},'var(--orange)',loading)+controlBox('QC Return B Punch',data?retObj(data):{},'var(--accent2)',loading);
-    var party=document.getElementById('bPunchTypeChart'); if(party) party.innerHTML=miniBars(data&&data.party_counts||[['CNS',0],['ENG',0]],'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))',loading);
-    var mat=document.getElementById('bPunchMatChart'); if(mat) mat.innerHTML=miniBars(data&&data.material_counts||[],'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))',loading);
-    setTimeout(function(){apiApplying=false;},80);
-  }
-  function scheduleStage(force,delay){ clearTimeout(stageTimer); stageTimer=setTimeout(function(){ loadStage(!!force); }, delay==null?90:delay); }
-  async function loadStage(force){
-    if(!shouldStage()) return;
-    var k=key(); lastStageKey=k;
-    if(!force && stageCache.has(k)){ applyStage(k,stageCache.get(k),false); return; }
-    if(stageAbort) try{stageAbort.abort();}catch(e){}
-    stageAbort=('AbortController' in window)?new AbortController():null;
-    var seq=++stageSeq;
-    applyStage(k,stageCache.get(k)||null,!stageCache.has(k));
-    var p=new URLSearchParams(k); p.set('_v77',Date.now());
-    try{
-      var r=await fetch('/api/bitem/stage-control?'+p.toString(),{headers:headers(),cache:'no-store',signal:stageAbort?stageAbort.signal:undefined});
-      var txt=await r.text(); var j; try{j=JSON.parse(txt);}catch(e){throw new Error('stage-control non-JSON: '+txt.slice(0,120));}
-      if(!r.ok || j.ok===false) throw new Error(j&&j.error?j.error:('HTTP '+r.status));
-      if(seq!==stageSeq || k!==key()) return;
-      stageCache.set(k,j); applyStage(k,j,false);
-    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V77] Stage Control B Item API failed:',e&&e.message||e); if(k===key()&&stageCache.has(k)) applyStage(k,stageCache.get(k),false); }
-  }
-
-  // Public hooks used by older wrappers. They now point to the source-locked API owner.
-  window.refreshDashboardBItemKpi=function(force){ return loadKpi(!!force); };
-  window.refreshStageControlBItemD1=function(force){ return loadStage(!!force); };
-  window.refreshStagePendingReinstScopeD1=function(force){ return loadStage(!!force); };
-
-  function filterChanged(){ scheduleKpi(true,40); scheduleStage(true,55); }
-  function hook(name){
-    var fn=window[name]; if(typeof fn!=='function' || fn.__v77BitemLock) return;
-    window[name]=function(){ var out=fn.apply(this,arguments); filterChanged(); return out; };
-    window[name].__v77BitemLock=true;
-    try{ if(name==='setF') setF=window[name]; if(name==='resetFilters') resetFilters=window[name]; }catch(e){}
-  }
-  hook('setF'); hook('resetFilters');
-
-  function hookRenderer(name,after){
-    var fn=window[name]; if(typeof fn!=='function' || fn.__v77BitemLock) return;
-    window[name]=function(){ var out=fn.apply(this,arguments); setTimeout(after,0); return out; };
-    window[name].__v77BitemLock=true;
-    try{ if(name==='renderOverview') renderOverview=window[name]; if(name==='renderPunchPage') renderPunchPage=window[name]; if(name==='renderStagesControl') renderStagesControl=window[name]; }catch(e){}
-  }
-  hookRenderer('renderOverview',function(){ scheduleKpi(false,20); });
-  hookRenderer('renderPunchPage',function(){ scheduleKpi(false,20); });
-  hookRenderer('renderStagesControl',function(){ scheduleStage(false,25); });
-
-  function observe(id,cb){
-    if(!('MutationObserver' in window)) return;
-    var el=document.getElementById(id); if(!el || el.__v77Obs) return; el.__v77Obs=true;
-    new MutationObserver(function(){ if(apiApplying) return; cb(); }).observe(el,{childList:true,subtree:false});
-  }
-  function attachObservers(){ observe('punchCards',function(){ scheduleKpi(false,35); }); observe('punchPageCards',function(){ scheduleKpi(false,35); }); observe('bPunchControlBoxes',function(){ scheduleStage(false,45); }); }
-  function boot(){ attachObservers(); scheduleKpi(false,180); scheduleStage(false,220); }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
-  window.addEventListener('hashchange',function(){ setTimeout(boot,120); });
-  document.addEventListener('click',function(){ setTimeout(function(){ attachObservers(); if(lastKpiKey!==key()) scheduleKpi(true,20); if(lastStageKey!==key()) scheduleStage(true,25); },80); },true);
-})();
-</script>
-
-
-<script id="v78-bitem-api-single-owner-no-dance">
-/* V78 — B Item API single visual owner / no dancing
-   Correct source remains B Item Control backend API.
-   This block does not change Selenium, workflow, SQL, or B Item Control.
-   It only makes the dashboard visual B numbers have one final writer.
-*/
-(function(){
-  if(window.__V78_BITEM_API_SINGLE_OWNER_NO_DANCE__) return;
-  window.__V78_BITEM_API_SINGLE_OWNER_NO_DANCE__ = true;
-
-  function C(v){ return v==null?'':String(v).replace(/\s+/g,' ').trim(); }
-  function U(v){ return C(v).toUpperCase(); }
-  function esc(v){ return C(v).replace(/[&<>"']/g,function(ch){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]);}); }
-  function fmt(v){ v=Number(v||0); return Number.isFinite(v)?v.toLocaleString(): '0'; }
-  function fmtTotal(v){ v=Number(v||0); if(!Number.isFinite(v)) v=0; return v>=1000 ? (v/1000).toFixed(1)+'K' : v.toLocaleString(); }
-  function pct(c,t){ c=Number(c||0); t=Number(t||0); return t>0?Math.round(c/t*100):0; }
-  function fObj(){ try{return window.F || F || {};}catch(e){return window.F || {};} }
-  function arr(v){
-    if(Array.isArray(v)) return v.map(C).filter(Boolean).filter(function(x){return U(x)!=='ALL';});
-    var s=C(v); return (!s || U(s)==='ALL') ? [] : [s];
-  }
-  function contractor(){
-    var c=C(fObj().con||'ALL');
-    if(!c || U(c)==='ALL') return 'ALL';
-    if(/JGC/i.test(c)) return 'JGC Direct MP';
-    if(/CCC/i.test(c)) return 'CCC';
-    return c;
-  }
-  function areasFromGroups(groups){
-    groups=(groups||[]).map(U).filter(Boolean);
-    if(!groups.length) return [];
+    var direct=arr(f.area);
+    if (direct.length) return direct;
+    var groups=arr(f.areaGrp).map(U);
+    if (!groups.length) return [];
     try{
       var all=(typeof getAllAreasFromTP==='function'?getAllAreasFromTP():[]).map(C).filter(Boolean);
       return all.filter(function(a){
-        try{return groups.indexOf(U(areaGroupOf(a)))>=0;}catch(e){return groups.indexOf(U(a).charAt(0))>=0;}
+        try { return groups.indexOf(U(areaGroupOf(a))) >= 0; }
+        catch(e){ return groups.indexOf(U(a).charAt(0)) >= 0; }
       });
-    }catch(e){return [];}
+    }catch(e){ return []; }
   }
   function canonicalParams(){
-    var f=fObj();
     var p=new URLSearchParams();
     p.set('contractor', contractor());
-    var areas=arr(f.area);
-    if(!areas.length) areas=areasFromGroups(arr(f.areaGrp));
-    if(areas.length) p.set('area', areas.join(','));
-    var stages=arr(f.stage); if(stages.length) p.set('stage', stages.join(','));
+    var areas=areasFromGroupFilters(); if (areas.length) p.set('area', areas.join(','));
+    var st=arr(fObj().stage); if (st.length) p.set('stage', st.join(','));
     return p;
   }
   function key(){ return canonicalParams().toString(); }
   function headers(){
     var h={'Accept':'application/json'};
     try{
-      var t=localStorage.getItem('ccc_bitem_auth_token')||sessionStorage.getItem('ccc_bitem_auth_token_session')||localStorage.getItem('ccc_auth_token')||localStorage.getItem('cccToken')||'';
+      var t=localStorage.getItem('ccc_bitem_auth_token') || sessionStorage.getItem('ccc_bitem_auth_token_session') || localStorage.getItem('ccc_auth_token') || localStorage.getItem('cccToken') || '';
       if(t) h.Authorization='Bearer '+t;
     }catch(e){}
     return h;
   }
-  function activePage(){ try{return String(window.currentPage||currentPage||'');}catch(e){return String(window.currentPage||'');} }
-  function visible(id){ var el=document.getElementById(id); return !!(el && el.offsetParent!==null); }
-  function needKpi(){ return activePage()==='overview' || activePage()==='punch' || visible('punchCards') || visible('punchPageCards'); }
-  function needStage(){ return activePage()==='stagescontrol' || visible('bPunchControlBoxes'); }
+  function activePage(){ try { return String(window.currentPage || currentPage || ''); } catch(e){ return String(window.currentPage || ''); } }
+  function visible(id){ var el=document.getElementById(id); return !!(el && el.offsetParent !== null); }
+  function needKpi(){ var pg=activePage(); return pg==='overview' || pg==='punch' || visible('punchCards') || visible('punchPageCards'); }
+  function needStage(){ var pg=activePage(); return pg==='stagescontrol' || visible('bPunchControlBoxes') || visible('bPunchTypeChart') || visible('bPunchMatChart'); }
 
-  var STATE={kpiKey:'',kpi:null,stageKey:'',stage:null};
-  var writing=false, kpiSeq=0, stageSeq=0, kpiTimer=0, stageTimer=0, kpiAbort=null, stageAbort=null;
-
-  function responseJson(obj){return new Response(JSON.stringify(obj||{}),{status:200,headers:{'content-type':'application/json; charset=utf-8','x-v78-bitem-single-owner':'compat'}});}
-  var nativeFetch=window.fetch?window.fetch.bind(window):null;
-  if(nativeFetch && !window.__V78_FETCH_COMPAT_NORMALIZER__){
-    window.__V78_FETCH_COMPAT_NORMALIZER__=true;
-    window.fetch=function(input,init){
-      var raw=(typeof input==='string')?input:(input&&input.url)||'';
+  // Outer fetch firewall: dashboard must never call the heavy B Item state table.
+  // Returning a non-ok response makes old hidden intervals fail before they call refresh().
+  var nativeFetch = window.fetch ? window.fetch.bind(window) : null;
+  if (nativeFetch) {
+    window.fetch = function(input, init){
+      var raw=(typeof input==='string') ? input : (input && input.url) || '';
       try{
         var url=new URL(raw, location.origin);
-        var isK=/\/api\/bitem\/kpi$/i.test(url.pathname);
-        var isS=/\/api\/bitem\/stage-control$/i.test(url.pathname);
-        if((isK||isS) && url.searchParams.get('__v78_owner')!=='1'){
-          var k=key();
-          if(isK && STATE.kpi && STATE.kpiKey===k) return Promise.resolve(responseJson(STATE.kpi));
-          if(isS && STATE.stage && STATE.stageKey===k) return Promise.resolve(responseJson(STATE.stage));
+        if (/\/api\/bitem\/state$/i.test(url.pathname) && (url.searchParams.has('include_removed') || Number(url.searchParams.get('limit')||0) >= 50000)) {
+          return Promise.resolve(new Response(JSON.stringify({ok:false,error:'B Item full state is disabled on dashboard. Use aggregate API only.', source:'v79_state_firewall'}), {status:409, headers:{'content-type':'application/json; charset=utf-8','x-v79-bitem-state-firewall':'1'}}));
+        }
+        // Canonicalize old KPI/stage calls so every renderer uses the exact same filter.
+        if ((/\/api\/bitem\/kpi$/i.test(url.pathname) || /\/api\/bitem\/stage-control$/i.test(url.pathname)) && url.searchParams.get('__v79_owner') !== '1') {
           var cp=canonicalParams();
           var out=new URL(url.pathname, location.origin);
-          cp.forEach(function(v,n){out.searchParams.set(n,v);});
-          out.searchParams.set('__v78_compat','1');
-          out.searchParams.set('_',Date.now());
+          cp.forEach(function(v,k){ out.searchParams.set(k,v); });
+          out.searchParams.set('__v79_compat','1');
+          out.searchParams.set('_', Date.now());
           return nativeFetch(out.pathname+out.search, init);
         }
       }catch(e){}
-      return nativeFetch(input,init);
+      return nativeFetch(input, init);
     };
   }
 
-  function punchCardHTML(data,k,loading){
-    if(loading){
-      return '<div class="punch-box" data-v78-bitem="kpi" data-key="'+esc(k)+'">'+
+  var STATE={kpiKey:'',kpi:null,stageKey:'',stage:null};
+  var kpiSeq=0, stageSeq=0, kpiAbort=null, stageAbort=null, tKpi=0, tStage=0, writing=false;
+
+  function kpiObject(d){ return d && (d.punchB || d.b || d.B || d) || {}; }
+  function punchBHTML(data,k,loading){
+    if (loading) {
+      return '<div class="punch-box v79-bitem-box" data-v79-bitem="kpi" data-key="'+esc(k)+'">'+
         '<div class="punch-cat">Punch B</div><div class="punch-total" style="color:var(--orange)">--</div>'+ 
-        '<div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source locked</div>'+ 
+        '<div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source</div>'+ 
         '<div class="punch-prog"><div class="punch-prog-fill" style="width:0%;background:var(--orange)"></div></div></div>';
     }
-    data=data&&data.punchB?data.punchB:(data||{});
-    var total=Number(data.total||0), cleared=Number(data.cleared||0), bal=Number(data.balance);
-    if(!Number.isFinite(bal)) bal=Math.max(total-cleared,0);
+    var o=kpiObject(data), total=n(o.total), cleared=n(o.cleared), bal=Number(o.balance);
+    if (!Number.isFinite(bal)) bal=Math.max(total-cleared,0);
     var pc=pct(cleared,total);
-    return '<div class="punch-box" data-v78-bitem="kpi" data-key="'+esc(k)+'" data-total="'+total+'" data-cleared="'+cleared+'" data-balance="'+bal+'">'+
+    return '<div class="punch-box v79-bitem-box" data-v79-bitem="kpi" data-key="'+esc(k)+'" data-total="'+total+'" data-cleared="'+cleared+'" data-balance="'+bal+'">'+
       '<div class="punch-cat">Punch B</div><div class="punch-total" style="color:var(--orange)">'+fmtTotal(total)+'</div>'+ 
       '<div class="punch-sub">Cleared: '+fmt(cleared)+'</div><div class="punch-sub" style="color:var(--red)">Balance: '+fmt(bal)+'</div>'+ 
       '<div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:var(--orange)"></div></div>'+ 
       '<div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div></div>';
   }
-  function replaceBCard(containerId,data,k,loading){
+  function replaceB(containerId,data,k,loading){
     var wrap=document.getElementById(containerId); if(!wrap) return;
     var cards=[].slice.call(wrap.children||[]);
     var card=cards.find(function(x){var c=x.querySelector&&x.querySelector('.punch-cat');return c&&/Punch\s*B/i.test(c.textContent||'');}) || cards[1];
     if(!card) return;
-    if(card.getAttribute('data-v78-bitem')==='kpi' && card.getAttribute('data-key')===k && !loading && data && Number(card.getAttribute('data-total')||-1)===Number((data.punchB||data||{}).total||0)) return;
-    card.outerHTML=punchCardHTML(data,k,loading);
+    var newHTML=punchBHTML(data,k,loading);
+    if(card.outerHTML !== newHTML) card.outerHTML=newHTML;
   }
   function applyKpi(data,loading){
     var k=key();
     writing=true;
-    try{ replaceBCard('punchCards',data,k,loading); replaceBCard('punchPageCards',data,k,loading); }
-    finally{ setTimeout(function(){writing=false;},50); }
+    try{ replaceB('punchCards',data,k,loading); replaceB('punchPageCards',data,k,loading); }
+    finally{ setTimeout(function(){ writing=false; },40); }
   }
   async function loadKpi(force){
     if(!needKpi()) return STATE.kpi;
@@ -10007,36 +9350,37 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     if(kpiAbort) try{kpiAbort.abort();}catch(e){}
     kpiAbort=('AbortController' in window)?new AbortController():null;
     var seq=++kpiSeq;
-    applyKpi((STATE.kpiKey===k?STATE.kpi:null), !(STATE.kpiKey===k&&STATE.kpi));
-    var p=canonicalParams(); p.set('__v78_owner','1'); p.set('_',Date.now());
+    if(STATE.kpi && STATE.kpiKey===k) applyKpi(STATE.kpi,false); else applyKpi(null,true);
+    var p=canonicalParams(); p.set('__v79_owner','1'); p.set('_',Date.now());
     try{
       var r=await nativeFetch('/api/bitem/kpi?'+p.toString(),{headers:headers(),cache:'no-store',signal:kpiAbort?kpiAbort.signal:undefined});
       var txt=await r.text(); var j; try{j=JSON.parse(txt);}catch(e){throw new Error('B KPI non-JSON: '+txt.slice(0,120));}
       if(!r.ok || j.ok===false) throw new Error((j&&j.error)||('HTTP '+r.status));
       if(seq!==kpiSeq || k!==key()) return j;
       STATE.kpiKey=k; STATE.kpi=j; applyKpi(j,false); return j;
-    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V78] B KPI failed:',e&&e.message||e); if(STATE.kpiKey===k&&STATE.kpi) applyKpi(STATE.kpi,false); }
+    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V79] B KPI failed:', e&&e.message||e); if(STATE.kpi && STATE.kpiKey===k) applyKpi(STATE.kpi,false); }
   }
 
+  function retObj(d){ return d && (d.ret || d.return_b || d.qc_return || d.qcReturn) || {}; }
   function stageBox(title,obj,color,loading){
-    if(loading){return '<div class="punch-box" data-v78-bitem="stage"><div class="punch-cat">'+esc(title)+'</div><div class="punch-total" style="color:'+color+'">--</div><div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source locked</div><div class="punch-prog"><div class="punch-prog-fill" style="width:0%;background:'+color+'"></div></div></div>';}
-    obj=obj||{}; var total=Number(obj.total||0), cleared=Number(obj.cleared||0), bal=Number(obj.balance); if(!Number.isFinite(bal)) bal=Math.max(total-cleared,0); var pc=pct(cleared,total);
-    return '<div class="punch-box" data-v78-bitem="stage" data-total="'+total+'"><div class="punch-cat">'+esc(title)+'</div><div class="punch-total" style="color:'+color+'">'+fmt(total)+'</div><div class="punch-sub">Cleared: '+fmt(cleared)+'</div><div class="punch-sub" style="color:var(--red)">Balance: '+fmt(bal)+'</div><div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:'+color+'"></div></div><div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div></div>';
+    if(loading){ return '<div class="punch-box v79-bitem-box" data-v79-bitem="stage"><div class="punch-cat">'+esc(title)+'</div><div class="punch-total" style="color:'+color+'">--</div><div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source</div><div class="punch-prog"><div class="punch-prog-fill" style="width:0%;background:'+color+'"></div></div></div>'; }
+    obj=obj||{}; var total=n(obj.total), cleared=n(obj.cleared), bal=Number(obj.balance); if(!Number.isFinite(bal)) bal=Math.max(total-cleared,0); var pc=pct(cleared,total);
+    return '<div class="punch-box v79-bitem-box" data-v79-bitem="stage" data-total="'+total+'" data-cleared="'+cleared+'" data-balance="'+bal+'"><div class="punch-cat">'+esc(title)+'</div><div class="punch-total" style="color:'+color+'">'+fmt(total)+'</div><div class="punch-sub">Cleared: '+fmt(cleared)+'</div><div class="punch-sub" style="color:var(--red)">Balance: '+fmt(bal)+'</div><div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:'+color+'"></div></div><div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div></div>';
   }
   function bars(items,color,loading){
-    if(loading) return '<div class="hbar-row" data-v78-bitem="stage"><div class="hbar-lbl">Loading...</div><div class="hbar-wrap"><div class="hbar-fill" style="width:2%;background:'+color+'"><span class="hbar-cnt outside">--</span></div></div></div>';
-    items=Array.isArray(items)?items:[]; var mx=Math.max.apply(null,items.map(function(x){return Number(x[1]||0);}).concat([1]));
-    return items.map(function(x){var label=C(x[0])||'Other', val=Number(x[1]||0), w=val>0?Math.max(2,val/mx*100):0; return '<div class="hbar-row" data-v78-bitem="stage"><div class="hbar-lbl">'+esc(label)+'</div><div class="hbar-wrap"><div class="hbar-fill" style="width:'+w+'%;background:'+color+'"><span class="hbar-cnt '+(val/mx<.18?'outside':'')+'">'+fmt(val)+'</span></div></div></div>';}).join('');
+    if(loading) return '<div class="hbar-row" data-v79-bitem="stage"><div class="hbar-lbl">Loading...</div><div class="hbar-wrap"><div class="hbar-fill" style="width:2%;background:'+color+'"><span class="hbar-cnt outside">--</span></div></div></div>';
+    items=Array.isArray(items)?items:[]; var mx=Math.max.apply(null,items.map(function(x){return n(x[1]);}).concat([1]));
+    return items.map(function(x){ var label=C(x[0])||'Other', val=n(x[1]), w=val>0?Math.max(2,val/mx*100):0; return '<div class="hbar-row" data-v79-bitem="stage"><div class="hbar-lbl">'+esc(label)+'</div><div class="hbar-wrap"><div class="hbar-fill" style="width:'+w+'%;background:'+color+'"><span class="hbar-cnt '+(val/mx<.18?'outside':'')+'">'+fmt(val)+'</span></div></div></div>'; }).join('');
   }
-  function retObj(d){ return d && (d.ret || d.return_b || d.qc_return || d.qcReturn) || {}; }
   function applyStage(data,loading){
-    var k=key(); writing=true;
+    if(!needStage()) return;
+    writing=true;
     try{
       var box=document.getElementById('bPunchControlBoxes');
       if(box) box.innerHTML=stageBox('CNS B Punch',data&&data.cns||{},'var(--orange)',loading)+stageBox('QC Return B Punch',data?retObj(data):{},'var(--accent2)',loading);
       var party=document.getElementById('bPunchTypeChart'); if(party) party.innerHTML=bars(data&&data.party_counts||[['CNS',0],['ENG',0]],'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))',loading);
       var mat=document.getElementById('bPunchMatChart'); if(mat) mat.innerHTML=bars(data&&data.material_counts||[],'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))',loading);
-    }finally{ setTimeout(function(){writing=false;},70); }
+    }finally{ setTimeout(function(){ writing=false; },50); }
   }
   async function loadStage(force){
     if(!needStage()) return STATE.stage;
@@ -10045,59 +9389,72 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     if(stageAbort) try{stageAbort.abort();}catch(e){}
     stageAbort=('AbortController' in window)?new AbortController():null;
     var seq=++stageSeq;
-    applyStage((STATE.stageKey===k?STATE.stage:null), !(STATE.stageKey===k&&STATE.stage));
-    var p=canonicalParams(); p.set('__v78_owner','1'); p.set('_',Date.now());
+    if(STATE.stage && STATE.stageKey===k) applyStage(STATE.stage,false); else applyStage(null,true);
+    var p=canonicalParams(); p.set('__v79_owner','1'); p.set('_',Date.now());
     try{
       var r=await nativeFetch('/api/bitem/stage-control?'+p.toString(),{headers:headers(),cache:'no-store',signal:stageAbort?stageAbort.signal:undefined});
       var txt=await r.text(); var j; try{j=JSON.parse(txt);}catch(e){throw new Error('B stage non-JSON: '+txt.slice(0,120));}
       if(!r.ok || j.ok===false) throw new Error((j&&j.error)||('HTTP '+r.status));
       if(seq!==stageSeq || k!==key()) return j;
       STATE.stageKey=k; STATE.stage=j; applyStage(j,false); return j;
-    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V78] B stage failed:',e&&e.message||e); if(STATE.stageKey===k&&STATE.stage) applyStage(STATE.stage,false); }
+    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V79] B stage failed:', e&&e.message||e); if(STATE.stage && STATE.stageKey===k) applyStage(STATE.stage,false); }
   }
   function schedule(force){
-    clearTimeout(kpiTimer); clearTimeout(stageTimer);
-    kpiTimer=setTimeout(function(){loadKpi(!!force);},45);
-    stageTimer=setTimeout(function(){loadStage(!!force);},65);
+    clearTimeout(tKpi); clearTimeout(tStage);
+    tKpi=setTimeout(function(){ loadKpi(!!force); }, 30);
+    tStage=setTimeout(function(){ loadStage(!!force); }, 45);
   }
-  window.refreshDashboardBItemKpi=function(force){return loadKpi(!!force);};
-  window.refreshStageControlBItemD1=function(force){return loadStage(!!force);};
-  window.refreshStagePendingReinstScopeD1=function(force){return loadStage(!!force);};
+
+  // Public aggregate refresh functions used by the turbo renderer.
+  window.refreshDashboardBItemKpi=function(force){ return loadKpi(!!force); };
+  window.refreshStageControlBItemD1=function(force){ return loadStage(!!force); };
+  window.refreshStagePendingReinstScopeD1=function(force){ return loadStage(!!force); };
+  // Dashboard page must not load the full B item table or trigger full dashboard rerenders from it.
+  window.bitemLoadSystemState=function(){ return Promise.resolve({ok:false,skipped:true,source:'v79_dashboard_aggregate_only'}); };
 
   function hook(name){
-    var fn=window[name]; if(typeof fn!=='function' || fn.__v78BitemOwner) return;
+    var fn=window[name]; if(typeof fn!=='function' || fn.__v79Hook) return;
     window[name]=function(){ var out=fn.apply(this,arguments); schedule(true); return out; };
-    window[name].__v78BitemOwner=true;
+    window[name].__v79Hook=true;
     try{ if(name==='setF') setF=window[name]; if(name==='setMultiF') setMultiF=window[name]; if(name==='resetFilters') resetFilters=window[name]; }catch(e){}
   }
   hook('setF'); hook('setMultiF'); hook('resetFilters');
+
   function hookRender(name){
-    var fn=window[name]; if(typeof fn!=='function' || fn.__v78BitemOwner) return;
+    var fn=window[name]; if(typeof fn!=='function' || fn.__v79Hook) return;
     window[name]=function(){ var out=fn.apply(this,arguments); schedule(false); return out; };
-    window[name].__v78BitemOwner=true;
+    window[name].__v79Hook=true;
     try{ if(name==='renderOverview') renderOverview=window[name]; if(name==='renderPunchPage') renderPunchPage=window[name]; if(name==='renderStagesControl') renderStagesControl=window[name]; }catch(e){}
   }
   hookRender('renderOverview'); hookRender('renderPunchPage'); hookRender('renderStagesControl');
 
-  function guardNode(id,fn){
+  function guard(id,fn){
     if(!('MutationObserver' in window)) return;
-    var el=document.getElementById(id); if(!el || el.__v78Guard) return; el.__v78Guard=true;
+    var el=document.getElementById(id); if(!el || el.__v79Guard) return;
+    el.__v79Guard=true;
     new MutationObserver(function(){
       if(writing) return;
-      clearTimeout(el.__v78GuardTimer);
-      el.__v78GuardTimer=setTimeout(function(){ try{fn();}catch(e){} },15);
+      clearTimeout(el.__v79Timer);
+      el.__v79Timer=setTimeout(function(){
+        try{
+          var k=key();
+          if((id==='punchCards'||id==='punchPageCards') && STATE.kpi && STATE.kpiKey===k) applyKpi(STATE.kpi,false);
+          else if((id==='bPunchControlBoxes'||id==='bPunchTypeChart'||id==='bPunchMatChart') && STATE.stage && STATE.stageKey===k) applyStage(STATE.stage,false);
+          else fn();
+        }catch(e){}
+      },0);
     }).observe(el,{childList:true,subtree:true});
   }
   function attachGuards(){
-    guardNode('punchCards',function(){ if(STATE.kpiKey===key()&&STATE.kpi) applyKpi(STATE.kpi,false); else loadKpi(false); });
-    guardNode('punchPageCards',function(){ if(STATE.kpiKey===key()&&STATE.kpi) applyKpi(STATE.kpi,false); else loadKpi(false); });
-    guardNode('bPunchControlBoxes',function(){ if(STATE.stageKey===key()&&STATE.stage) applyStage(STATE.stage,false); else loadStage(false); });
-    guardNode('bPunchTypeChart',function(){ if(STATE.stageKey===key()&&STATE.stage) applyStage(STATE.stage,false); });
-    guardNode('bPunchMatChart',function(){ if(STATE.stageKey===key()&&STATE.stage) applyStage(STATE.stage,false); });
+    guard('punchCards',function(){loadKpi(false);});
+    guard('punchPageCards',function(){loadKpi(false);});
+    guard('bPunchControlBoxes',function(){loadStage(false);});
+    guard('bPunchTypeChart',function(){loadStage(false);});
+    guard('bPunchMatChart',function(){loadStage(false);});
   }
   function boot(){ attachGuards(); schedule(false); }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
-  window.addEventListener('hashchange',function(){ setTimeout(boot,100); });
-  document.addEventListener('click',function(){ setTimeout(boot,80); },true);
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+  window.addEventListener('hashchange',function(){ setTimeout(boot,80); });
+  document.addEventListener('click',function(){ setTimeout(boot,60); },true);
 })();
 </script>
