@@ -9,10 +9,26 @@ function parseJson(v){
   if(typeof v === 'object') return v || {};
   try { return JSON.parse(String(v)); } catch (_) { return {}; }
 }
-function displayIdFromCounter(contractor,tp,seq){
-  const c = contractor || 'JGC';
+function num(v, def, min, max){
+  let n = Number(v || def);
+  if(!Number.isFinite(n)) n = def;
+  n = Math.trunc(n);
+  if(min !== undefined) n = Math.max(min, n);
+  if(max !== undefined) n = Math.min(max, n);
+  return n;
+}
+function chunks(arr, size){
+  const out=[];
+  for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
+  return out;
+}
+function displayIdFromExisting(expectedContractor, tp, oldId){
+  const c = expectedContractor || 'JGC';
   const t = tp || 'NO-TP';
-  return `${c}-B-${t}-C${String(seq).padStart(3,'0')}`;
+  const old = String(oldId || '');
+  const m = old.match(/-C(\d+)$/i);
+  const seq = m ? String(m[1]).padStart(3,'0') : '001';
+  return `${c}-B-${t}-C${seq}`;
 }
 function sourceRowFromRegistry(r){
   const row = parseJson(r.row_json);
@@ -26,6 +42,21 @@ function sourceRowFromRegistry(r){
   row['Sheet No.'] = row['Sheet No.'] || row['Sheet No'] || row.SheetNo || r.sheet_no || '';
   return row;
 }
+function updateStoredRowJson(r, src, expected){
+  const row = parseJson(r.row_json);
+  row['TP NUMBER'] = row['TP NUMBER'] || src['TP NUMBER'] || r.tp_no || '';
+  row['Construction Stage'] = row['Construction Stage'] || src['Construction Stage'] || r.construction_stage || '';
+  row['Punch Category\n(A/B/C)'] = row['Punch Category\n(A/B/C)'] || src['Punch Category\n(A/B/C)'] || r.punch_category || '';
+  row['Material TYPE'] = row['Material TYPE'] || src['Material TYPE'] || r.material_type || '';
+  row['Comments'] = row['Comments'] || src['Comments'] || r.comment_text || '';
+  row['Area'] = row.Area || src.Area || r.area || '';
+  row['ISO No.'] = row['ISO No.'] || src['ISO No.'] || r.iso_or_spool || '';
+  row['Sheet No.'] = row['Sheet No.'] || src['Sheet No.'] || r.sheet_no || '';
+  row['CCC / JGC Direct MP'] = expected;
+  row['Contractor'] = expected;
+  row['Scope'] = expected === 'CCC' ? 'CCC' : 'JGC Direct MP';
+  return row;
+}
 async function sbJson(env,path,init={}){
   const r = await sbFetch(env,path,init);
   const text = await r.text();
@@ -35,31 +66,39 @@ async function sbJson(env,path,init={}){
   if(!r.ok) throw new Error(`Supabase request failed (${r.status}) ${path}: ${JSON.stringify(data).slice(0,800)}`);
   return data;
 }
-async function getRows(env,limit,offset){
+async function getRows(env,limit,cursor){
   const cols = 'id,bitem_id,fingerprint,contractor,tp_no,construction_stage,punch_category,comment_text,material_type,iso_or_spool,area,row_json,active,sync_note';
-  const data = await sbJson(env, `/rest/v1/bitem_registry?select=${cols}&active=eq.1&limit=${limit}&offset=${offset}&order=tp_no.asc`);
+  const gt = cursor > 0 ? `&id=gt.${enc(cursor)}` : '';
+  const data = await sbJson(env, `/rest/v1/bitem_registry?select=${cols}&active=eq.1${gt}&limit=${limit}&order=id.asc`);
   return Array.isArray(data) ? data : [];
 }
-async function getByFingerprint(env,fp){
-  const data = await sbJson(env, `/rest/v1/bitem_registry?select=id,bitem_id,fingerprint,active&fingerprint=eq.${enc(fp)}&limit=1`);
-  return Array.isArray(data) && data[0] ? data[0] : null;
-}
-async function maxSeqForKey(env, contractor, tp){
-  const prefix = `${contractor || 'JGC'}-B-${tp || 'NO-TP'}-C`;
-  const data = await sbJson(env, `/rest/v1/bitem_registry?select=bitem_id&contractor=eq.${enc(contractor)}&tp_no=eq.${enc(tp)}&bitem_id=like.${enc(prefix)}*&limit=1000`);
-  let max = 0;
-  for(const r of (Array.isArray(data)?data:[])){
-    const m = String(r.bitem_id || '').match(/-C(\d+)$/);
-    if(m) max = Math.max(max, Number(m[1] || 0));
+async function getByFingerprints(env,fps){
+  const out = new Map();
+  const uniq = [...new Set((fps || []).filter(Boolean).map(String))];
+  for(const part of chunks(uniq, 50)){
+    if(!part.length) continue;
+    const data = await sbJson(env, `/rest/v1/bitem_registry?select=id,bitem_id,fingerprint,active&fingerprint=in.(${part.map(enc).join(',')})&limit=100`);
+    for(const r of (Array.isArray(data) ? data : [])) out.set(String(r.fingerprint), r);
   }
-  return max;
+  return out;
 }
-async function patchByFingerprint(env, oldFp, body){
-  await sbJson(env, `/rest/v1/bitem_registry?fingerprint=eq.${enc(oldFp)}`, {
+async function patchById(env, id, body){
+  await sbJson(env, `/rest/v1/bitem_registry?id=eq.${enc(id)}`, {
     method:'PATCH',
     headers:{'content-type':'application/json','prefer':'return=minimal'},
     body: JSON.stringify(body)
   });
+}
+function expectedIdMatches(id, expected, tp){
+  const s = String(id || '');
+  return s.startsWith(`${expected || 'JGC'}-B-${tp || 'NO-TP'}-C`);
+}
+function mismatchReason(r, expected, expectedFp, expectedId){
+  const reasons = [];
+  if(String(clean(r.contractor || 'JGC') || 'JGC') !== String(expected)) reasons.push('contractor');
+  if(String(r.fingerprint || '') !== String(expectedFp || '')) reasons.push('fingerprint');
+  if(String(r.bitem_id || '') !== String(expectedId || '')) reasons.push('bitem_id');
+  return reasons.join(',');
 }
 
 export async function onRequestGet(context){
@@ -69,57 +108,92 @@ export async function onRequestGet(context){
     if(auth.error) return auth.error;
     const url = new URL(context.request.url);
     const apply = ['1','true','yes','apply'].includes(String(url.searchParams.get('apply')||'').toLowerCase());
-    const maxRows = Math.max(1, Math.min(Number(url.searchParams.get('max') || 20000), 60000));
-    const limit = 1000;
-    let offset = 0;
-    let scanned = 0, needsChange = 0, updated = 0, deactivatedDuplicates = 0, skipped = 0;
+    const cursor = num(url.searchParams.get('cursor'), 0, 0, 1000000000);
+    // Apply mode is intentionally capped to stay below Cloudflare subrequest limits.
+    // Verify/dry-run can scan larger pages because it only reads once and does local calculations.
+    const limit = apply
+      ? num(url.searchParams.get('limit'), 30, 1, 40)
+      : num(url.searchParams.get('limit'), 500, 1, 1000);
+
+    const rows = await getRows(context.env, limit, cursor);
+    let scanned = rows.length, needsChange = 0, updated = 0, deactivatedDuplicates = 0, skipped = 0;
+    let nextCursor = cursor;
     const examples = [];
-    const seqCache = new Map();
-    while(scanned < maxRows){
-      const rows = await getRows(context.env, Math.min(limit, maxRows - scanned), offset);
-      if(!rows.length) break;
-      offset += rows.length;
-      scanned += rows.length;
-      for(const r of rows){
-        const src = sourceRowFromRegistry(r);
-        const expected = deriveContractor(src) || 'JGC';
-        const current = clean(r.contractor || 'JGC') || 'JGC';
-        if(String(expected) === String(current)) continue;
-        needsChange++;
-        const tp = tpNo(src) || r.tp_no || '';
-        const newFp = await fingerprint(src);
-        const collision = await getByFingerprint(context.env, newFp);
-        const sample = { bitem_id:r.bitem_id, tp_no:tp, area:rowArea(src) || r.area || '', from:current, to:expected, new_fingerprint:newFp.slice(0,12) };
-        if(examples.length < 25) examples.push(sample);
-        if(!apply) continue;
-        if(collision && String(collision.fingerprint || '') !== String(r.fingerprint || '')){
-          await patchByFingerprint(context.env, r.fingerprint, {
+    const planned = [];
+
+    for(const r of rows){
+      nextCursor = Math.max(nextCursor, Number(r.id || 0));
+      const src = sourceRowFromRegistry(r);
+      const expected = deriveContractor(src) || 'JGC';
+      const tp = tpNo(src) || r.tp_no || '';
+      const expectedFp = await fingerprint(src);
+      const expectedId = displayIdFromExisting(expected, tp, r.bitem_id);
+      const current = clean(r.contractor || 'JGC') || 'JGC';
+      const reason = mismatchReason(r, expected, expectedFp, expectedId);
+      if(!reason) continue;
+      needsChange++;
+      const sample = {
+        id:r.id,
+        bitem_id:r.bitem_id,
+        expected_bitem_id:expectedId,
+        tp_no:tp,
+        area:rowArea(src) || r.area || '',
+        from:current,
+        to:expected,
+        reason
+      };
+      if(examples.length < 25) examples.push(sample);
+      planned.push({ r, src, expected, tp, expectedFp, expectedId, current, reason });
+    }
+
+    let collisions = new Map();
+    if(apply && planned.length){
+      collisions = await getByFingerprints(context.env, planned.map(x => x.expectedFp));
+    }
+
+    if(apply){
+      for(const p of planned){
+        const collision = collisions.get(String(p.expectedFp));
+        if(collision && String(collision.id || '') !== String(p.r.id || '')){
+          await patchById(context.env, p.r.id, {
             active: 0,
-            sync_note: `Deactivated by scope repair: duplicate exists as ${collision.bitem_id || collision.fingerprint}.`,
+            sync_note: `Deactivated by scope repair: duplicate exists as ${collision.bitem_id || collision.fingerprint}. ${clean(p.r.sync_note || '')}`.slice(0,900),
             updated_at: nowIso()
           });
           deactivatedDuplicates++;
           continue;
         }
-        const seqKey = `${expected}|${tp}`;
-        if(!seqCache.has(seqKey)) seqCache.set(seqKey, await maxSeqForKey(context.env, expected, tp));
-        const next = Number(seqCache.get(seqKey) || 0) + 1;
-        seqCache.set(seqKey, next);
-        const newId = displayIdFromCounter(expected, tp, next);
-        await patchByFingerprint(context.env, r.fingerprint, {
-          contractor: expected,
-          fingerprint: newFp,
-          bitem_id: newId,
-          sync_note: `Scope repaired from ${current} to ${expected}. ${clean(r.sync_note || '')}`.slice(0,900),
+        await patchById(context.env, p.r.id, {
+          contractor: p.expected,
+          fingerprint: p.expectedFp,
+          bitem_id: p.expectedId,
+          row_json: updateStoredRowJson(p.r, p.src, p.expected),
+          sync_note: `Scope repaired from ${p.current} to ${p.expected}. ${clean(p.r.sync_note || '')}`.slice(0,900),
           updated_at: nowIso()
         });
         updated++;
       }
-      if(rows.length < limit) break;
     }
-    return json({ ok:true, source:'bitem_scope_repair', mode:apply?'APPLIED':'DRY_RUN', scanned, needs_change:needsChange, updated, deactivated_duplicates:deactivatedDuplicates, skipped, examples });
+
+    const done = rows.length < limit;
+    return json({
+      ok:true,
+      source:'bitem_scope_repair',
+      version:'V84_BATCH_SAFE',
+      mode:apply?'APPLIED':'DRY_RUN',
+      cursor,
+      next_cursor: nextCursor,
+      limit,
+      scanned,
+      needs_change: needsChange,
+      updated,
+      deactivated_duplicates: deactivatedDuplicates,
+      skipped,
+      done,
+      examples
+    });
   }catch(e){
     console.error('BITEM_REPAIR_SCOPE_ERROR', e && (e.stack || e.message || e));
-    return json({ ok:false, source:'bitem_scope_repair', error:e && e.message ? e.message : String(e || 'Unknown error') }, 500);
+    return json({ ok:false, source:'bitem_scope_repair', version:'V84_BATCH_SAFE', error:e && e.message ? e.message : String(e || 'Unknown error') }, 500);
   }
 }
