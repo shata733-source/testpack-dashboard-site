@@ -9682,3 +9682,197 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   };
 })();
 </script>
+
+
+<script id="v77-bitem-api-source-lock">
+/* V77 — Correct B Item source lock
+   Important: B Item dashboard numbers come from the same B Item Control backend APIs,
+   not from dashboard_data.js / B_ITEM_ROWS.
+   - Overview / Punch B uses /api/bitem/kpi
+   - Stages Control B boxes/charts use /api/bitem/stage-control
+   - Stale async responses are ignored, and old local renders cannot overwrite the final API values.
+*/
+(function(){
+  if(window.__V77_BITEM_API_SOURCE_LOCK__) return;
+  window.__V77_BITEM_API_SOURCE_LOCK__ = true;
+
+  function C(v){ return v==null?'':String(v).replace(/\s+/g,' ').trim(); }
+  function U(v){ return C(v).toUpperCase(); }
+  function fmt(v){ return Number(v||0).toLocaleString(); }
+  function fmtTotal(v){ v=Number(v||0); return v>=1000 ? (v/1000).toFixed(1)+'K' : v.toLocaleString(); }
+  function pct(c,t){ c=Number(c||0); t=Number(t||0); return t>0 ? Math.round(c/t*100) : 0; }
+  function esc(v){ return C(v).replace(/[&<>"']/g,function(ch){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]);}); }
+  function fObj(){ try{return window.F||F||{};}catch(e){return window.F||{};} }
+  function arr(v){
+    if(Array.isArray(v)) return v.map(C).filter(Boolean).filter(function(x){return U(x)!=='ALL';});
+    var s=C(v); return (!s || U(s)==='ALL') ? [] : [s];
+  }
+  function contractor(){
+    var c=C(fObj().con||'ALL');
+    if(!c || U(c)==='ALL') return 'ALL';
+    if(/JGC/i.test(c)) return 'JGC Direct MP';
+    if(/CCC/i.test(c)) return 'CCC';
+    return c;
+  }
+  function areasForApi(){
+    var f=fObj();
+    var a=arr(f.area);
+    if(a.length) return a;
+    var g=arr(f.areaGrp).map(U);
+    if(!g.length) return [];
+    try{
+      var all=(typeof getAllAreasFromTP==='function'?getAllAreasFromTP():[]).map(C).filter(Boolean);
+      return all.filter(function(x){
+        try{return g.indexOf(U(areaGroupOf(x)))>=0;}catch(e){return g.indexOf(U(x).charAt(0))>=0;}
+      });
+    }catch(e){ return []; }
+  }
+  function params(){
+    var f=fObj();
+    var p=new URLSearchParams();
+    p.set('contractor', contractor());
+    var a=areasForApi(); if(a.length) p.set('area', a.join(','));
+    var st=arr(f.stage); if(st.length) p.set('stage', st.join(','));
+    return p;
+  }
+  function key(){ return params().toString(); }
+  function headers(){
+    var h={'Accept':'application/json'};
+    try{ var t=localStorage.getItem('ccc_bitem_auth_token')||localStorage.getItem('ccc_auth_token')||localStorage.getItem('cccToken')||''; if(t) h.Authorization='Bearer '+t; }catch(e){}
+    return h;
+  }
+  function activePage(){ try{return String(window.currentPage||'');}catch(e){return '';} }
+  function visible(id){ var el=document.getElementById(id); return !!(el && el.offsetParent!==null); }
+  function shouldKpi(){ return visible('punchCards') || visible('punchPageCards') || activePage()==='overview' || activePage()==='punch'; }
+  function shouldStage(){ return visible('bPunchControlBoxes') || activePage()==='stagescontrol'; }
+
+  var apiApplying=false;
+  var kpiCache=new Map(), stageCache=new Map();
+  var kpiSeq=0, stageSeq=0, kpiAbort=null, stageAbort=null, kpiTimer=null, stageTimer=null;
+  var lastKpiKey='', lastStageKey='';
+
+  function punchCardHTML(obj,k,loading){
+    if(loading){
+      return '<div class="punch-box" data-v77-bitem-api="kpi" data-key="'+esc(k)+'" data-loading="1">'+
+        '<div class="punch-cat">Punch B</div><div class="punch-total" style="color:var(--orange)">--</div>'+
+        '<div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source</div>'+
+        '<div class="punch-prog"><div class="punch-prog-fill" style="width:0%;background:var(--orange)"></div></div></div>';
+    }
+    obj=obj&&obj.punchB?obj.punchB:(obj||{});
+    var total=Number(obj.total||0), cleared=Number(obj.cleared||0);
+    var balance=Number(obj.balance); if(!Number.isFinite(balance)) balance=Math.max(total-cleared,0);
+    var pc=pct(cleared,total);
+    return '<div class="punch-box" data-v77-bitem-api="kpi" data-key="'+esc(k)+'" data-total="'+total+'" data-cleared="'+cleared+'" data-balance="'+balance+'">'+
+      '<div class="punch-cat">Punch B</div><div class="punch-total" style="color:var(--orange)">'+fmtTotal(total)+'</div>'+
+      '<div class="punch-sub">Cleared: '+fmt(cleared)+'</div><div class="punch-sub" style="color:var(--red)">Balance: '+fmt(balance)+'</div>'+
+      '<div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:var(--orange)"></div></div>'+
+      '<div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div></div>';
+  }
+  function replacePunchB(id,data,k,loading){
+    var wrap=document.getElementById(id); if(!wrap) return;
+    var cards=[].slice.call(wrap.children||[]);
+    var card=cards.find(function(x){var c=x.querySelector&&x.querySelector('.punch-cat'); return c&&/Punch\s*B/i.test(c.textContent||'');}) || cards[1];
+    if(!card) return;
+    card.outerHTML=punchCardHTML(data,k,loading);
+  }
+  function applyKpi(k,data,loading){
+    if(k!==key()) return;
+    apiApplying=true;
+    replacePunchB('punchCards',data,k,loading);
+    replacePunchB('punchPageCards',data,k,loading);
+    setTimeout(function(){apiApplying=false;},60);
+  }
+  function scheduleKpi(force,delay){ clearTimeout(kpiTimer); kpiTimer=setTimeout(function(){ loadKpi(!!force); }, delay==null?70:delay); }
+  async function loadKpi(force){
+    if(!shouldKpi()) return;
+    var k=key(); lastKpiKey=k;
+    if(!force && kpiCache.has(k)){ applyKpi(k,kpiCache.get(k),false); return; }
+    if(kpiAbort) try{kpiAbort.abort();}catch(e){}
+    kpiAbort=('AbortController' in window)?new AbortController():null;
+    var seq=++kpiSeq;
+    applyKpi(k,kpiCache.get(k)||null,!kpiCache.has(k));
+    var p=new URLSearchParams(k); p.set('_v77',Date.now());
+    try{
+      var r=await fetch('/api/bitem/kpi?'+p.toString(),{headers:headers(),cache:'no-store',signal:kpiAbort?kpiAbort.signal:undefined});
+      var txt=await r.text(); var j; try{j=JSON.parse(txt);}catch(e){throw new Error('kpi non-JSON: '+txt.slice(0,120));}
+      if(!r.ok || j.ok===false) throw new Error(j&&j.error?j.error:('HTTP '+r.status));
+      if(seq!==kpiSeq || k!==key()) return;
+      kpiCache.set(k,j); applyKpi(k,j,false);
+    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V77] B Item KPI API failed:',e&&e.message||e); if(k===key()&&kpiCache.has(k)) applyKpi(k,kpiCache.get(k),false); }
+  }
+
+  function controlBox(title,obj,color,loading){
+    if(loading){ return '<div class="punch-box" data-v77-bitem-api="stage" data-loading="1"><div class="punch-cat">'+title+'</div><div class="punch-total" style="color:'+color+'">--</div><div class="punch-sub">Loading from B Item Control...</div><div class="punch-sub" style="color:var(--muted)">API source</div><div class="punch-prog"><div class="punch-prog-fill" style="width:0%;background:'+color+'"></div></div></div>'; }
+    obj=obj||{}; var total=Number(obj.total||0), cleared=Number(obj.cleared||0); var balance=Number(obj.balance); if(!Number.isFinite(balance)) balance=Math.max(total-cleared,0); var pc=pct(cleared,total);
+    return '<div class="punch-box" data-v77-bitem-api="stage" data-total="'+total+'" data-cleared="'+cleared+'" data-balance="'+balance+'"><div class="punch-cat">'+title+'</div><div class="punch-total" style="color:'+color+'">'+fmt(total)+'</div><div class="punch-sub">Cleared: '+fmt(cleared)+'</div><div class="punch-sub" style="color:var(--red)">Balance: '+fmt(balance)+'</div><div class="punch-prog"><div class="punch-prog-fill" style="width:'+pc+'%;background:'+color+'"></div></div><div style="font-size:11px;color:var(--muted);margin-top:5px;font-weight:600">'+pc+'% cleared</div></div>';
+  }
+  function miniBars(items,color,loading){
+    if(loading) return '<div class="hbar-row" data-v77-bitem-api="stage"><div class="hbar-lbl">Loading...</div><div class="hbar-wrap"><div class="hbar-fill" style="width:2%;background:'+color+'"><span class="hbar-cnt outside">--</span></div></div></div>';
+    items=Array.isArray(items)?items:[]; var mx=Math.max.apply(null,items.map(function(x){return Number(x[1]||0);}).concat([1]));
+    return items.map(function(x){ var label=C(x[0])||'Other', val=Number(x[1]||0), w=val>0?Math.max(2,val/mx*100):0; return '<div class="hbar-row" data-v77-bitem-api="stage"><div class="hbar-lbl">'+esc(label)+'</div><div class="hbar-wrap"><div class="hbar-fill" style="width:'+w+'%;background:'+color+'"><span class="hbar-cnt '+(val/mx<.18?'outside':'')+'">'+fmt(val)+'</span></div></div></div>'; }).join('');
+  }
+  function retObj(data){ return data && (data.ret || data.return_b || data.qc_return || data.qcReturn) || {}; }
+  function applyStage(k,data,loading){
+    if(k!==key() || !shouldStage()) return;
+    apiApplying=true;
+    var box=document.getElementById('bPunchControlBoxes');
+    if(box) box.innerHTML=controlBox('CNS B Punch',data&&data.cns||{},'var(--orange)',loading)+controlBox('QC Return B Punch',data?retObj(data):{},'var(--accent2)',loading);
+    var party=document.getElementById('bPunchTypeChart'); if(party) party.innerHTML=miniBars(data&&data.party_counts||[['CNS',0],['ENG',0]],'linear-gradient(90deg,var(--accent),rgba(34,211,238,.35))',loading);
+    var mat=document.getElementById('bPunchMatChart'); if(mat) mat.innerHTML=miniBars(data&&data.material_counts||[],'linear-gradient(90deg,var(--accent2),rgba(124,58,237,.35))',loading);
+    setTimeout(function(){apiApplying=false;},80);
+  }
+  function scheduleStage(force,delay){ clearTimeout(stageTimer); stageTimer=setTimeout(function(){ loadStage(!!force); }, delay==null?90:delay); }
+  async function loadStage(force){
+    if(!shouldStage()) return;
+    var k=key(); lastStageKey=k;
+    if(!force && stageCache.has(k)){ applyStage(k,stageCache.get(k),false); return; }
+    if(stageAbort) try{stageAbort.abort();}catch(e){}
+    stageAbort=('AbortController' in window)?new AbortController():null;
+    var seq=++stageSeq;
+    applyStage(k,stageCache.get(k)||null,!stageCache.has(k));
+    var p=new URLSearchParams(k); p.set('_v77',Date.now());
+    try{
+      var r=await fetch('/api/bitem/stage-control?'+p.toString(),{headers:headers(),cache:'no-store',signal:stageAbort?stageAbort.signal:undefined});
+      var txt=await r.text(); var j; try{j=JSON.parse(txt);}catch(e){throw new Error('stage-control non-JSON: '+txt.slice(0,120));}
+      if(!r.ok || j.ok===false) throw new Error(j&&j.error?j.error:('HTTP '+r.status));
+      if(seq!==stageSeq || k!==key()) return;
+      stageCache.set(k,j); applyStage(k,j,false);
+    }catch(e){ if(!(e&&e.name==='AbortError')) console.warn('[V77] Stage Control B Item API failed:',e&&e.message||e); if(k===key()&&stageCache.has(k)) applyStage(k,stageCache.get(k),false); }
+  }
+
+  // Public hooks used by older wrappers. They now point to the source-locked API owner.
+  window.refreshDashboardBItemKpi=function(force){ return loadKpi(!!force); };
+  window.refreshStageControlBItemD1=function(force){ return loadStage(!!force); };
+  window.refreshStagePendingReinstScopeD1=function(force){ return loadStage(!!force); };
+
+  function filterChanged(){ scheduleKpi(true,40); scheduleStage(true,55); }
+  function hook(name){
+    var fn=window[name]; if(typeof fn!=='function' || fn.__v77BitemLock) return;
+    window[name]=function(){ var out=fn.apply(this,arguments); filterChanged(); return out; };
+    window[name].__v77BitemLock=true;
+    try{ if(name==='setF') setF=window[name]; if(name==='resetFilters') resetFilters=window[name]; }catch(e){}
+  }
+  hook('setF'); hook('resetFilters');
+
+  function hookRenderer(name,after){
+    var fn=window[name]; if(typeof fn!=='function' || fn.__v77BitemLock) return;
+    window[name]=function(){ var out=fn.apply(this,arguments); setTimeout(after,0); return out; };
+    window[name].__v77BitemLock=true;
+    try{ if(name==='renderOverview') renderOverview=window[name]; if(name==='renderPunchPage') renderPunchPage=window[name]; if(name==='renderStagesControl') renderStagesControl=window[name]; }catch(e){}
+  }
+  hookRenderer('renderOverview',function(){ scheduleKpi(false,20); });
+  hookRenderer('renderPunchPage',function(){ scheduleKpi(false,20); });
+  hookRenderer('renderStagesControl',function(){ scheduleStage(false,25); });
+
+  function observe(id,cb){
+    if(!('MutationObserver' in window)) return;
+    var el=document.getElementById(id); if(!el || el.__v77Obs) return; el.__v77Obs=true;
+    new MutationObserver(function(){ if(apiApplying) return; cb(); }).observe(el,{childList:true,subtree:false});
+  }
+  function attachObservers(){ observe('punchCards',function(){ scheduleKpi(false,35); }); observe('punchPageCards',function(){ scheduleKpi(false,35); }); observe('bPunchControlBoxes',function(){ scheduleStage(false,45); }); }
+  function boot(){ attachObservers(); scheduleKpi(false,180); scheduleStage(false,220); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',boot); else boot();
+  window.addEventListener('hashchange',function(){ setTimeout(boot,120); });
+  document.addEventListener('click',function(){ setTimeout(function(){ attachObservers(); if(lastKpiKey!==key()) scheduleKpi(true,20); if(lastStageKey!==key()) scheduleStage(true,25); },80); },true);
+})();
+</script>

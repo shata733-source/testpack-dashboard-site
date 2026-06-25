@@ -5,7 +5,7 @@ const CCC_AUTH_USER_SESSION_KEY  = 'ccc_bitem_auth_user_session';
 const CCC_PAGES = {
   dashboard: { title: 'Test Pack Dashboard', href: '/dashboard.html#/dashboard' },
   bitem: { title: 'B Punch Edit', href: '/bitem.html#/bitem' },
-  'bitem-monitoring': { title: 'B Item Monitoring', href: '/bitem-monitoring.html#/monitoring' },
+  'bitem-monitoring': { title: 'B Item Monitoring', href: '/bitem-monitoring.html' },
   users: { title: 'User Management', href: '/users.html' }
 };
 const CCC_EDIT_PAGES = ['bitem','users'];
@@ -42,7 +42,7 @@ function normalizePortalNext(raw){
     '/projects':'/projects.html',
     '/dashboard':'/dashboard.html',
     '/bitem':'/bitem.html',
-    '/bitem-monitoring':'/bitem-monitoring.html#/monitoring',
+    '/bitem-monitoring':'/bitem-monitoring.html',
     '/users':'/users.html',
     '/profile':'/profile.html'
   };
