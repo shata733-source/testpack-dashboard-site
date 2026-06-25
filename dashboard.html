@@ -3502,8 +3502,16 @@ function renderOverview(data){
 
   renderMaterialKPIs('overviewMatKpi',data);
 
-  const chartAreas=getAllAreasFromTP().filter(a=>cnt(data,r=>tpAreas(r).includes(a))>0);
-  const areaCnts=chartAreas.map(a=>[a,cnt(data,r=>tpAreas(r).includes(a))]);
+  // V73: one-pass area counts. The old code looped through all TP rows once per area,
+  // which made Overview noticeably heavy after every filter.
+  const areaCountMap=new Map();
+  (data||[]).forEach(r=>{
+    (tpAreas(r)||[]).forEach(a=>{
+      if(!a)return;
+      areaCountMap.set(a,(areaCountMap.get(a)||0)+1);
+    });
+  });
+  const areaCnts=[...areaCountMap.entries()].sort((a,b)=>areaSort(a[0],b[0]));
   h('areaChart',areaCnts.length?hbar(areaCnts,Math.max(...areaCnts.map(x=>x[1]),1)):'<div class="muted">No area data</div>');
   const priCnts=[0,1,2,3,4,5].map(p=>[String(p),cnt(data,r=>r.pri===p)]);
   h('priChart',hbar(priCnts,Math.max(...priCnts.map(x=>x[1]),1),'linear-gradient(90deg,var(--accent3),rgba(245,158,11,.35))'));
@@ -4846,6 +4854,40 @@ const HISTORY_DATA_URL_BASE='https://raw.githubusercontent.com/shata733-source/t
 let CURRENT_LIVE_SNAPSHOT=null;
 let CURRENT_DELTA_LABEL='Previous hourly update';
 
+// V73: remote dashboard_data.js may be generated with var/let declarations.
+// Convert known data declarations to window assignments before eval, then copy them
+// back to the page variables. This avoids stale zero data after the first render.
+const CCC_LIVE_DATA_VARS=['TP','MAT','MAT_ROWS','PUNCH_STATS','PUNCH_MON','PUNCH_WEK','PUNCH_EVENTS','TP_MON','TP_WEK','TP_SUMMARY_ROWS','TP_SUMMARY_HEADERS','TEST_PACK_ROWS','TEST_PACK_HEADERS','B_ITEM_ROWS','B_ITEM_HEADERS'];
+function normalizeLiveDataCodeForEval(code){
+  let out=String(code||'');
+  CCC_LIVE_DATA_VARS.forEach(name=>{
+    const re=new RegExp('(^|[\n;])\s*(?:var|let|const)\s+'+name+'\s*=','g');
+    out=out.replace(re,'$1window.'+name+'=');
+  });
+  return out;
+}
+function syncLiveDataGlobalsFromWindow(){
+  try{if(Array.isArray(window.TP))TP=window.TP;}catch(e){}
+  try{if(window.MAT&&typeof window.MAT==='object')MAT=window.MAT;}catch(e){}
+  try{if(Array.isArray(window.MAT_ROWS))MAT_ROWS=window.MAT_ROWS;}catch(e){}
+  try{if(Array.isArray(window.PUNCH_STATS))PUNCH_STATS=window.PUNCH_STATS;}catch(e){}
+  try{if(window.PUNCH_MON&&typeof window.PUNCH_MON==='object')PUNCH_MON=window.PUNCH_MON;}catch(e){}
+  try{if(window.PUNCH_WEK&&typeof window.PUNCH_WEK==='object')PUNCH_WEK=window.PUNCH_WEK;}catch(e){}
+  try{if(Array.isArray(window.PUNCH_EVENTS))PUNCH_EVENTS=window.PUNCH_EVENTS;}catch(e){}
+  try{if(window.TP_MON&&typeof window.TP_MON==='object')TP_MON=window.TP_MON;}catch(e){}
+  try{if(window.TP_WEK&&typeof window.TP_WEK==='object')TP_WEK=window.TP_WEK;}catch(e){}
+  try{if(Array.isArray(window.TP_SUMMARY_ROWS))TP_SUMMARY_ROWS=window.TP_SUMMARY_ROWS;}catch(e){}
+  try{if(Array.isArray(window.TP_SUMMARY_HEADERS))TP_SUMMARY_HEADERS=window.TP_SUMMARY_HEADERS;}catch(e){}
+  try{if(Array.isArray(window.TEST_PACK_ROWS))TEST_PACK_ROWS=window.TEST_PACK_ROWS;}catch(e){}
+  try{if(Array.isArray(window.TEST_PACK_HEADERS))TEST_PACK_HEADERS=window.TEST_PACK_HEADERS;}catch(e){}
+  try{if(Array.isArray(window.B_ITEM_ROWS))B_ITEM_ROWS=window.B_ITEM_ROWS;}catch(e){}
+  try{if(Array.isArray(window.B_ITEM_HEADERS))B_ITEM_HEADERS=window.B_ITEM_HEADERS;}catch(e){}
+}
+function invalidateAllDashboardFilterCaches(){
+  try{invalidateDashboardCaches();}catch(e){}
+  try{if(typeof window.__V72_INVALIDATE_FILTER_CACHE__==='function')window.__V72_INVALIDATE_FILTER_CACHE__();}catch(e){}
+}
+
 function currentDashboardSnapshot(source){
   ensureLightTestPackRows();
   return {
@@ -5899,12 +5941,13 @@ async function fetchAndApplyLiveData(options){
     const res=await fetch(url,{cache:'no-store'});
     if(!res.ok)throw new Error('HTTP '+res.status);
     const code=await res.text();
-    (0,eval)(code);
+    (0,eval)(normalizeLiveDataCodeForEval(code));
+    syncLiveDataGlobalsFromWindow();
 
     if(typeof ensureLightTestPackRows==='function')ensureLightTestPackRows();
     try{rebuildPunchStatsFromTestPackRowsIfNeeded(true);}catch(e){console.warn('Punch rebuild after live load failed:',e);}
-    if(typeof invalidateDashboardCaches==='function')invalidateDashboardCaches();
     DATA_VERSION++;
+    invalidateAllDashboardFilterCaches();
 
     const remoteTime=(typeof window.DASHBOARD_DATA_UPDATED_AT!=='undefined')?window.DASHBOARD_DATA_UPDATED_AT:new Date().toISOString();
     LIVE_LAST_REFRESH_AT=remoteTime;
@@ -6358,6 +6401,12 @@ async function bootDashboard(){
   await loadUpdateDiffBaseline();
   setupDeltaDateInput();
   onDeltaModeChanged();
+  // V73: show a valid cached snapshot immediately when available, then replace it with live data.
+  // Empty/stale zero snapshots are ignored by applyDashboardSnapshot().
+  try{
+    const hadSaved=await loadDashboardSnapshot();
+    if(hadSaved){syncLiveFilterUi(); invalidateAllDashboardFilterCaches(); refresh(true);}
+  }catch(e){console.warn('Saved dashboard preload skipped:',e);}
   await fetchAndApplyLiveData({initial:true});
   scheduleLiveRefresh();
 }
@@ -9112,7 +9161,11 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
   function page(){ try { return window.currentPage || currentPage || 'overview'; } catch(e) { return window.currentPage || 'overview'; } }
   function fKey(){
     var x = f();
-    return [txt(x.con || 'ALL'), arr(x.areaGrp).join('|'), arr(x.area).join('|'), arr(x.sys).join('|'), arr(x.stage).join('|')].join('§');
+    var dv = 0, rows = 0, bRows = 0;
+    try { dv = window.DATA_VERSION || DATA_VERSION || 0; } catch(e) { dv = window.DATA_VERSION || 0; }
+    try { rows = Array.isArray(TP) ? TP.length : 0; } catch(e) { rows = 0; }
+    try { bRows = Array.isArray(B_ITEM_ROWS) ? B_ITEM_ROWS.length : 0; } catch(e) { bRows = 0; }
+    return [dv, rows, bRows, txt(x.con || 'ALL'), arr(x.areaGrp).join('|'), arr(x.area).join('|'), arr(x.sys).join('|'), arr(x.stage).join('|')].join('§');
   }
   function rowMeta(r){
     if (!r) return {areas:[], grps:[], stage:{}};
@@ -9309,8 +9362,68 @@ body.light .vbar-val,body.light .hbar-cnt,body.light .bar-val,body.light .bar-la
     };
   }
 
+  window.__V72_INVALIDATE_FILTER_CACHE__ = invalidate;
   invalidate();
-  setTimeout(function(){ turboRefresh(true); }, 80);
+  setTimeout(function(){
+    var hasRows=false;
+    try{hasRows=Array.isArray(TP)&&TP.length>0;}catch(e){}
+    if(hasRows || (window.LIVE_DATA_SOURCE && window.LIVE_DATA_SOURCE!=='loading')) turboRefresh(true);
+  }, 80);
+})();
+</script>
+
+<script id="v73-dashboard-load-and-heavy-tab-fix">
+/* V73 Dashboard load + heavy tab fix
+   - Prevents cached empty TP data from surviving after live dashboard_data.js loads.
+   - Makes Punch and Stages Control tab switches immediate, then renders heavy tables after the tab is visible.
+*/
+(function(){
+  if(window.__V73_DASHBOARD_LOAD_AND_HEAVY_TAB_FIX__)return;
+  window.__V73_DASHBOARD_LOAD_AND_HEAVY_TAB_FIX__=true;
+  function hasTpRows(){try{return Array.isArray(TP)&&TP.length>0;}catch(e){return false;}}
+  function inv(){try{if(typeof window.__V72_INVALIDATE_FILTER_CACHE__==='function')window.__V72_INVALIDATE_FILTER_CACHE__();}catch(e){} try{if(typeof invalidateDashboardCaches==='function')invalidateDashboardCaches();}catch(e){}}
+
+  // Safety: if live data arrives after an early empty render, clear the turbo cache and repaint once.
+  var lastLen=-1;
+  setInterval(function(){
+    var len=0; try{len=Array.isArray(TP)?TP.length:0;}catch(e){}
+    if(len>0 && len!==lastLen){lastLen=len; inv(); try{if(typeof refresh==='function')refresh(true);}catch(e){}}
+  },1500);
+
+  function smallLoading(target,msg){var el=document.getElementById(target); if(el)el.innerHTML='<div class="stage-note">'+msg+'</div>';}
+
+  // Progressive Punch render: tab becomes visible instantly; detailed tables render right after.
+  var originalPunch=(typeof renderPunchPage==='function')?renderPunchPage:null;
+  var punchToken=0;
+  if(originalPunch && !originalPunch.__v73Progressive){
+    window.renderPunchPage=function(data){
+      var token=++punchToken;
+      try{if(typeof renderPunchPageCards==='function')renderPunchPageCards(data||((typeof getFiltered==='function')?getFiltered():[]));}catch(e){}
+      smallLoading('aStageStatusTable','Loading punch details...');
+      smallLoading('punchCommentsBody','Loading punch comments...');
+      clearTimeout(window.__v73PunchTimer);
+      window.__v73PunchTimer=setTimeout(function(){if(token!==punchToken)return; try{originalPunch(data);}catch(e){console.error('Punch progressive render failed:',e);}},30);
+    };
+    window.renderPunchPage.__v73Progressive=true;
+    try{renderPunchPage=window.renderPunchPage;}catch(e){}
+  }
+
+  // Progressive Stages Control render: avoid blocking the tab click while pending rows / D1 reconciliation are prepared.
+  var originalStage=(typeof renderStagesControl==='function')?renderStagesControl:null;
+  var stageToken=0;
+  if(originalStage && !originalStage.__v73Progressive){
+    window.renderStagesControl=function(data){
+      var token=++stageToken;
+      smallLoading('reinstPendingTable','Loading stage control rows...');
+      clearTimeout(window.__v73StageTimer);
+      window.__v73StageTimer=setTimeout(function(){if(token!==stageToken)return; try{originalStage(data);}catch(e){console.error('Stages Control progressive render failed:',e);}},20);
+    };
+    window.renderStagesControl.__v73Progressive=true;
+    try{renderStagesControl=window.renderStagesControl;}catch(e){}
+  }
+
+  // If the page opened with /dashboard#/dashboard, repaint after live data is ready without needing a manual filter click.
+  setTimeout(function(){if(hasTpRows()){inv(); try{refresh(true);}catch(e){}}},1800);
 })();
 </script>
 
