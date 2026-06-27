@@ -401,12 +401,27 @@ async function handleSync(context) {
       details: { syncId, removed },
       created_at: nowIso()
     }]);
-    await updateSyncRunCounters(context.env, syncId, { processed: valid.length, inserted, updated, removed, skipped, status: 'DONE', finished_at: nowIso() });
+    // V90 performance safety:
+    // Mark the sync as DONE only at the end. Avoid doing a GET+PATCH counter
+    // update on every chunk because that made the Worker heavier during long
+    // 276-chunk browser/Selenium sync runs.
+    try {
+      await sbJson(context.env, `/rest/v1/bitem_sync_runs?sync_id=eq.${enc(syncId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'prefer': 'return=minimal' },
+        body: JSON.stringify({ status: 'DONE', finished_at: nowIso(), removed_rows: removed })
+      });
+    } catch (e) {
+      console.warn('BITEM_SUPABASE_SYNC_RUN_DONE_MARK_SKIPPED', e && (e.message || e));
+    }
   } else {
-    await updateSyncRunCounters(context.env, syncId, { processed: valid.length, inserted, updated, skipped, status: 'RUNNING' });
+    // V90 performance safety:
+    // Do not update bitem_sync_runs counters per chunk.
+    // The source of truth is bitem_registry, and the Selenium log already
+    // prints per-chunk counts. This reduces Worker CPU/API work significantly.
   }
 
-  return json({ ok:true, source:'Supabase', syncId, processed: valid.length, skipped, duplicateFingerprintsInChunk, inserted, updated, changed, removed, flags });
+  return json({ ok:true, source:'Supabase', version:'V90_WORKER_LIGHT', syncId, processed: valid.length, skipped, duplicateFingerprintsInChunk, inserted, updated, changed, removed, flags });
 }
 
 export async function onRequestPost(context) {
